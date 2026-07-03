@@ -1,0 +1,99 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Odds</title>
+<style>body{background:#0a0e14;color:#eee;font-family:-apple-system,sans-serif;padding:16px}input,select{width:100%;padding:12px;margin:6px 0;background:#1a2234;color:#fff;border:1px solid #333;border-radius:8px;font-size:16px;box-sizing:border-box}button{width:100%;padding:14px;background:#5b8dff;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;margin-top:8px}.m{padding:10px;border-bottom:1px solid #333}.m b{font-size:11px;color:#7d8aa8;display:block}.o{display:flex;gap:6px;margin-top:6px}.o div{flex:1;background:#1a2234;padding:6px;text-align:center;border-radius:6px}#st{text-align:center;color:#888;padding:8px;font-size:13px;min-height:18px}</style></head>
+<body><h2>Odds Sharp</h2>
+<input id=k placeholder="API key OddsPapi">
+<input id=comp placeholder="Nome da competicao (ex: World Cup)" value="World Cup">
+<input id=d1 type=date>
+<input id=d2 type=date>
+<select id=bk><option value=pinnacle>Pinnacle</option><option value=polymarket>Polymarket</option><option value=kalshi>Kalshi</option><option value=fanduel>FanDuel</option><option value=draftkings>DraftKings</option><option value=bet365>Bet365</option></select>
+<button onclick="run()">Puxar jogos e odds</button>
+<div id=st></div><div id=r></div>
+<button id=cp style="display:none" onclick="cop()">Copiar tudo</button>
+<script>
+let txt="";
+const today=new Date();
+const in10=new Date(today.getTime()+9*86400000);
+document.getElementById('d1').value=today.toISOString().slice(0,10);
+document.getElementById('d2').value=in10.toISOString().slice(0,10);
+
+function f(v){return v==null?"-":Number(v).toFixed(2)}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
+
+async function run(){
+  const k=document.getElementById('k').value.trim();
+  if(!k){setSt("Falta API key",true);return}
+  const comp=document.getElementById('comp').value.trim().toLowerCase();
+  const d1=document.getElementById('d1').value;
+  const d2=document.getElementById('d2').value;
+  const bk=document.getElementById('bk').value;
+  if(!d1||!d2){setSt("Escolhe as datas",true);return}
+
+  document.getElementById('r').innerHTML="";
+  document.getElementById('cp').style.display='none';
+  setSt("A procurar jogos...");
+
+  try{
+    const url1=`https://api.oddspapi.io/v4/fixtures?apiKey=${encodeURIComponent(k)}&sportId=10&from=${d1}&to=${d2}`;
+    const res1=await fetch(url1);
+    if(!res1.ok){setSt("Erro fixtures: "+res1.status,true);return}
+    const fixtures=await res1.json();
+    if(!Array.isArray(fixtures)){setSt("Resposta inesperada da API",true);console.log(fixtures);return}
+
+    const matched=fixtures.filter(fx=>{
+      const tn=(fx.tournamentName||"").toLowerCase();
+      return comp==""||tn.includes(comp);
+    }).filter(fx=>fx.hasOdds);
+
+    if(matched.length===0){setSt("0 jogos encontrados para '"+comp+"' nessas datas",false);return}
+    setSt(matched.length+" jogos. A puxar odds "+bk+"...");
+
+    let h="",t="Odds "+bk+" - "+comp+"\n\n",n=0;
+    for(const fx of matched){
+      let od;
+      try{
+        const url2=`https://api.oddspapi.io/v4/odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bk}`;
+        const res2=await fetch(url2);
+        if(!res2.ok) continue;
+        od=await res2.json();
+      }catch(e){continue}
+
+      let h1=null,x=null,h2=null;
+      try{
+        const outs=od.bookmakerOdds[bk].markets["101"].outcomes;
+        h1=outs["101"].players["0"].price;
+        x=outs["102"].players["0"].price;
+        h2=outs["103"].players["0"].price;
+      }catch(e){}
+
+      const t1=fx.participant1Name||"?", t2=fx.participant2Name||"?";
+      const when=(fx.startTime||"").replace("T"," ").slice(0,16);
+      n++;
+      h+=`<div class=m><b>${when}</b>${esc(t1)} x ${esc(t2)}<div class=o><div>1: ${f(h1)}</div><div>X: ${f(x)}</div><div>2: ${f(h2)}</div></div></div>`;
+      t+=`${t1} x ${t2} - ${when}\n1: ${f(h1)} | X: ${f(x)} | 2: ${f(h2)}\n\n`;
+      await new Promise(r=>setTimeout(r,900));
+    }
+
+    document.getElementById('r').innerHTML=h;
+    setSt(n+" jogos com odds mostrados");
+    txt=t.trim();
+    document.getElementById('cp').style.display=n?'block':'none';
+
+  }catch(e){
+    setSt("Erro de ligacao: "+e.message,true);
+  }
+}
+
+function setSt(msg,err){
+  const s=document.getElementById('st');
+  s.textContent=msg;
+  s.style.color=err?"#ff6b6b":"#888";
+}
+
+function cop(){
+  navigator.clipboard.writeText(txt).then(()=>{
+    const b=document.getElementById('cp');
+    b.textContent="Copiado!";
+    setTimeout(()=>{b.textContent="Copiar tudo"},1200);
+  });
+}
+</script></body></html>
