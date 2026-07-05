@@ -1,5 +1,5 @@
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Odds</title>
-<style>body{background:#0a0e14;color:#eee;font-family:-apple-system,sans-serif;padding:16px}input,select{width:100%;padding:12px;margin:6px 0;background:#1a2234;color:#fff;border:1px solid #333;border-radius:8px;font-size:16px;box-sizing:border-box}button{width:100%;padding:14px;background:#5b8dff;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;margin-top:8px}.m{padding:10px;border-bottom:1px solid #333}.m b{font-size:11px;color:#7d8aa8;display:block}.o{display:flex;gap:6px;margin-top:6px}.o div{flex:1;background:#1a2234;padding:6px;text-align:center;border-radius:6px}#st{text-align:center;color:#888;padding:8px;font-size:13px;min-height:18px}.tabs{display:flex;gap:6px;margin:10px 0}.tab{flex:1;padding:10px;text-align:center;background:#1a2234;border-radius:8px;border:1px solid #333;font-size:14px;cursor:pointer}.tab.active{background:#5b8dff;border-color:#5b8dff}.hint{font-size:12px;color:#7d8aa8;margin:2px 0 8px}.dbg{background:#111826;border:1px solid #333;border-radius:8px;padding:10px;margin-top:8px;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#8fa}.chk{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#aaa}.chk input{width:auto;margin:0}</style></head>
+<style>body{background:#0a0e14;color:#eee;font-family:-apple-system,sans-serif;padding:16px}input,select{width:100%;padding:12px;margin:6px 0;background:#1a2234;color:#fff;border:1px solid #333;border-radius:8px;font-size:16px;box-sizing:border-box}button{width:100%;padding:14px;background:#5b8dff;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;margin-top:8px}.m{padding:10px;border-bottom:1px solid #333}.m b{font-size:11px;color:#7d8aa8;display:block}.o{display:flex;gap:6px;margin-top:6px}.o div{flex:1;background:#1a2234;padding:6px;text-align:center;border-radius:6px}#st{text-align:center;color:#888;padding:8px;font-size:13px;min-height:18px}.tabs{display:flex;gap:6px;margin:10px 0}.tab{flex:1;padding:10px;text-align:center;background:#1a2234;border-radius:8px;border:1px solid #333;font-size:14px;cursor:pointer}.tab.active{background:#5b8dff;border-color:#5b8dff}.hint{font-size:12px;color:#7d8aa8;margin:2px 0 8px}.dbg{background:#111826;border:1px solid #333;border-radius:8px;padding:10px;margin-top:8px;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#8fa}.chk{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#aaa}.chk input{width:auto;margin:0}.fidrow{margin-top:6px;font-size:11px;color:#7d8aa8}.fidval{color:#5b8dff;font-weight:bold;text-decoration:underline;cursor:pointer}</style></head>
 <body><h2>Odds Sharp</h2>
 
 <div class="tabs">
@@ -173,8 +173,8 @@ async function run(){
       const t1=fx.participant1Name||"?", t2=fx.participant2Name||"?";
       const when=(fx.startTime||"").replace("T"," ").slice(0,16);
       n++;
-      h+=`<div class=m><b>${when} ${esc(extraInfo)}</b>${esc(t1)} x ${esc(t2)}<div class=o><div>1: ${f(h1)}</div><div>X: ${f(x)}</div><div>2: ${f(h2)}</div></div>${debugJson?`<div class=dbg>${esc(JSON.stringify(debugJson,null,1))}</div>`:""}</div>`;
-      t+=`${t1} x ${t2} - ${when}${mode==='close'?extraInfo:""}\n1: ${f(h1)} | X: ${f(x)} | 2: ${f(h2)}\n\n`;
+      h+=`<div class=m><b>${when} ${esc(extraInfo)}</b>${esc(t1)} x ${esc(t2)}<div class=o><div>1: ${f(h1)}</div><div>X: ${f(x)}</div><div>2: ${f(h2)}</div></div><div class=fidrow>ID: <span class=fidval onclick="copyOne(this)">${esc(fx.fixtureId)}</span></div>${debugJson?`<div class=dbg>${esc(JSON.stringify(debugJson,null,1))}</div>`:""}</div>`;
+      t+=`${t1} x ${t2} - ${when}${mode==='close'?extraInfo:""} [ID: ${fx.fixtureId}]\n1: ${f(h1)} | X: ${f(x)} | 2: ${f(h2)}\n\n`;
       await new Promise(r=>setTimeout(r,900));
     }
 
@@ -192,6 +192,15 @@ function setSt(msg,err){
   const s=document.getElementById('st');
   s.textContent=msg;
   s.style.color=err?"#ff6b6b":"#888";
+}
+
+function copyOne(el){
+  const v=el.textContent;
+  navigator.clipboard.writeText(v).then(()=>{
+    const old=el.textContent;
+    el.textContent="Copiado!";
+    setTimeout(()=>{el.textContent=old},1000);
+  });
 }
 
 function cop(){
