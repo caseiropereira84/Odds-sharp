@@ -18,10 +18,12 @@
 </div>
 
 <div id="closeFields" style="display:none">
+<input id=teamHome placeholder="Equipa casa (opcional, so p/ etiqueta)">
+<input id=teamAway placeholder="Equipa fora (opcional, so p/ etiqueta)">
 <input id=kickoff type="datetime-local">
-<div class="hint">Hora aproximada do kickoff (opcional). Ajuda a escolher o snapshot mais proximo do fecho. Sem isto, assume-se o ultimo preco disponivel no historico.</div>
+<div class="hint">Hora do kickoff — OBRIGATORIA no modo Fecho. O historico inclui precos in-play (durante e apos o jogo); sem esta hora nao ha forma de distinguir o preco de fecho pre-jogo do preco a meio do jogo.</div>
 <input id=window type="number" value="60" min="1">
-<div class="hint">Janela antes do kickoff em minutos (opcional, só é usada se preencheres a hora acima). Limita a procura aos precos captados nesse intervalo.</div>
+<div class="hint">Janela antes do kickoff em minutos (recomendado 30-120). Escolhe o preco mais recente DENTRO dessa janela e ANTES do kickoff.</div>
 </div>
 
 <select id=bk><option value=pinnacle>Pinnacle</option><option value=polymarket>Polymarket</option><option value=kalshi>Kalshi</option><option value=fanduel>FanDuel</option><option value=draftkings>DraftKings</option><option value=bet365>Bet365</option></select>
@@ -167,10 +169,13 @@ async function run(){
 
   if(mode==='close'){
     if(!fid){setSt("Falta o fixtureId (obrigatorio no modo Fecho)",true);return}
-    const kickoffVal=document.getElementById('kickoff').value; // "" ou "YYYY-MM-DDTHH:MM"
-    const windowMin=parseInt(document.getElementById('window').value,10)||0;
+    const kickoffVal=document.getElementById('kickoff').value;
+    if(!kickoffVal){setSt("Falta a hora do kickoff (obrigatoria no modo Fecho, para nao misturar precos in-play)",true);return}
+    const windowMin=parseInt(document.getElementById('window').value,10)||60;
+    const teamHome=document.getElementById('teamHome').value.trim()||"?";
+    const teamAway=document.getElementById('teamAway').value.trim()||"?";
     setSt("A puxar historico "+bk+"...");
-    await runClose(k,fid,bk,debug,kickoffVal,windowMin);
+    await runClose(k,fid,bk,debug,kickoffVal,windowMin,teamHome,teamAway);
     return;
   }
 
@@ -257,7 +262,25 @@ function extractHistoricalHXA(hist,bk,kickoffVal,windowMin){
   }
 }
 
-async function runClose(k,fid,bk,debug,kickoffVal,windowMin){
+async function fetchTeamNames(k,fid,kickoffVal){
+  try{
+    const kd=new Date(kickoffVal);
+    if(isNaN(kd.getTime())) return null;
+    const from=new Date(kd.getTime()-3*86400000).toISOString().slice(0,10);
+    const to=new Date(kd.getTime()+1*86400000).toISOString().slice(0,10);
+    const url=`https://api.oddspapi.io/v4/fixtures?apiKey=${encodeURIComponent(k)}&sportId=10&from=${from}&to=${to}`;
+    const res=await fetch(url);
+    if(!res.ok) return null;
+    const list=await res.json();
+    if(!Array.isArray(list)) return null;
+    const found=list.find(fx=>String(fx.fixtureId)===String(fid));
+    return found ? {home:found.participant1Name||null, away:found.participant2Name||null} : null;
+  }catch(e){
+    return null;
+  }
+}
+
+async function runClose(k,fid,bk,debug,kickoffVal,windowMin,teamHome,teamAway){
   let h1=null,x=null,h2=null,extraInfo="",debugJson=null;
   try{
     const url2=`https://api.oddspapi.io/v4/historical-odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fid)}&bookmakers=${bk}`;
@@ -297,8 +320,12 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin){
   }catch(e){ extraInfo=" (erro historico: "+(e.name==='AbortError'?"timeout 20s":e.message)+")"; }
 
   const when=kickoffVal?kickoffVal.replace("T"," "):"";
-  const h=renderCard(when,extraInfo,"?","?",h1,x,h2,fid,debugJson);
-  const t=renderTxt("?","?",when,extraInfo,h1,x,h2,fid);
+  const auto=await fetchTeamNames(k,fid,kickoffVal);
+  const finalHome=(auto&&auto.home)||teamHome;
+  const finalAway=(auto&&auto.away)||teamAway;
+
+  const h=renderCard(when,extraInfo,finalHome,finalAway,h1,x,h2,fid,debugJson);
+  const t=renderTxt(finalHome,finalAway,when,extraInfo,h1,x,h2,fid);
   document.getElementById('r').innerHTML=h;
   setSt("1 jogo mostrado");
   txt=t.trim();
