@@ -8,11 +8,22 @@
 </div>
 
 <input id=k placeholder="API key OddsPapi">
-<input id=fid placeholder="ID do jogo (fixtureId) - opcional, filtra so este jogo">
-<div class="hint">Se preencheres o fixtureId, ignora competicao/datas e vai direto a esse jogo.</div>
+<input id=fid placeholder="ID do jogo (fixtureId)">
+<div class="hint" id="fidHint">No modo ao vivo, o fixtureId e opcional (filtra so este jogo). No modo Fecho, e obrigatorio.</div>
+
+<div id="liveFields">
 <input id=comp placeholder="Nome da competicao (ex: World Cup)" value="World Cup">
 <input id=d1 type=date>
 <input id=d2 type=date>
+</div>
+
+<div id="closeFields" style="display:none">
+<input id=kickoff type="datetime-local">
+<div class="hint">Hora aproximada do kickoff (opcional). Ajuda a escolher o snapshot mais proximo do fecho. Sem isto, assume-se o ultimo preco disponivel no historico.</div>
+<input id=window type="number" value="60" min="1">
+<div class="hint">Janela antes do kickoff em minutos (opcional, só é usada se preencheres a hora acima). Limita a procura aos precos captados nesse intervalo.</div>
+</div>
+
 <select id=bk><option value=pinnacle>Pinnacle</option><option value=polymarket>Polymarket</option><option value=kalshi>Kalshi</option><option value=fanduel>FanDuel</option><option value=draftkings>DraftKings</option><option value=bet365>Bet365</option></select>
 
 <div class="chk"><input type="checkbox" id="dbg"> <label for="dbg">Modo debug (mostra JSON em bruto do snapshot escolhido)</label></div>
@@ -36,9 +47,14 @@ function setMode(m){
   mode=m;
   document.getElementById('tabLive').classList.toggle('active',m==='live');
   document.getElementById('tabClose').classList.toggle('active',m==='close');
+  document.getElementById('liveFields').style.display=(m==='live')?'block':'none';
+  document.getElementById('closeFields').style.display=(m==='close')?'block':'none';
+  document.getElementById('fidHint').textContent = (m==='close')
+    ? "Obrigatorio no modo Fecho: cola aqui o fixtureId do jogo que queres fechar."
+    : "No modo ao vivo, o fixtureId e opcional (filtra so este jogo).";
   document.getElementById('r').innerHTML="";
   document.getElementById('cp').style.display='none';
-  setSt(m==='close' ? "Modo fecho: vai buscar o odds historico mais proximo do kickoff." : "Modo ao vivo: odds actuais.");
+  setSt(m==='close' ? "Modo fecho: cola o fixtureId e (opcional) a hora do kickoff." : "Modo ao vivo: odds actuais.");
 }
 
 async function getFixturesList(k,comp,d1,d2,fid){
@@ -108,15 +124,26 @@ function getTimestamp(item){
   return item.createdAt||item.timestamp||item.updatedAt||item.time||null;
 }
 
-function pickClosestToKickoff(history,startTimeIso){
+function pickClosestToKickoff(history,startTimeIso,windowMinutes){
   if(!Array.isArray(history)||history.length===0) return null;
   if(!startTimeIso){
     // sem startTime conhecido: assume o ultimo snapshot (mais recente) como fecho
     return history[history.length-1];
   }
   const target=new Date(startTimeIso).getTime();
+  let pool=history;
+  if(windowMinutes && windowMinutes>0){
+    const lower=target-(windowMinutes*60000);
+    const filtered=history.filter(item=>{
+      const ts=getTimestamp(item);
+      if(!ts) return false;
+      const t=new Date(ts).getTime();
+      return t>=lower && t<=target+60000; // pequena margem de 1min depois do kickoff, por seguranca
+    });
+    if(filtered.length>0) pool=filtered;
+  }
   let best=null,bestDiff=Infinity,bestBefore=null,bestBeforeDiff=Infinity;
-  for(const item of history){
+  for(const item of pool){
     const ts=getTimestamp(item);
     if(!ts) continue;
     const t=new Date(ts).getTime();
@@ -132,71 +159,54 @@ async function run(){
   const k=document.getElementById('k').value.trim();
   if(!k){setSt("Falta API key",true);return}
   const fid=document.getElementById('fid').value.trim();
-  const comp=document.getElementById('comp').value.trim();
-  const d1=document.getElementById('d1').value;
-  const d2=document.getElementById('d2').value;
   const bk=document.getElementById('bk').value;
   const debug=document.getElementById('dbg').checked;
-  if(!d1||!d2){setSt("Escolhe as datas",true);return}
 
   document.getElementById('r').innerHTML="";
   document.getElementById('cp').style.display='none';
+
+  if(mode==='close'){
+    if(!fid){setSt("Falta o fixtureId (obrigatorio no modo Fecho)",true);return}
+    const kickoffVal=document.getElementById('kickoff').value; // "" ou "YYYY-MM-DDTHH:MM"
+    const windowMin=parseInt(document.getElementById('window').value,10)||0;
+    setSt("A puxar historico "+bk+"...");
+    await runClose(k,fid,bk,debug,kickoffVal,windowMin);
+    return;
+  }
+
+  const comp=document.getElementById('comp').value.trim();
+  const d1=document.getElementById('d1').value;
+  const d2=document.getElementById('d2').value;
+  if(!d1||!d2){setSt("Escolhe as datas",true);return}
   setSt("A procurar jogos...");
 
   try{
     const matched=await getFixturesList(k,comp,d1,d2,fid);
     if(matched.length===0){setSt("0 jogos encontrados para '"+comp+"' nessas datas",false);return}
-    setSt(matched.length+" jogo(s). A puxar odds "+bk+" ("+(mode==='close'?"fecho/historico":"ao vivo")+")...");
+    setSt(matched.length+" jogo(s). A puxar odds "+bk+" (ao vivo)...");
 
-    let h="",t=(mode==='close'?"Odds FECHO ":"Odds ")+bk+" - "+(comp||fid)+"\n\n",n=0;
+    let h="",t="Odds "+bk+" - "+(comp||fid)+"\n\n",n=0;
 
     for(const fx of matched){
       let h1=null,x=null,h2=null,extraInfo="",debugJson=null;
-
-      if(mode==='live'){
-        try{
-          const url2=`https://api.oddspapi.io/v4/odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bk}`;
-          const res2=await fetch(url2);
-          if(res2.ok){
-            const od=await res2.json();
-            const outs=extractOutcomes(od,bk);
-            ({h1,x,h2}=outcomesToHXA(outs));
-            if(debug) debugJson=od;
-          }else{
-            extraInfo=" (erro odds: HTTP "+res2.status+")";
-          }
-        }catch(e){ extraInfo=" (erro odds: "+e.message+")"; }
-      }else{
-        try{
-          const url2=`https://api.oddspapi.io/v4/historical-odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bk}`;
-          const res2=await fetch(url2);
-          if(res2.ok){
-            const hist=await res2.json();
-            const list=Array.isArray(hist)?hist:(hist.history||hist.data||[]);
-            const chosen=pickClosestToKickoff(list,fx.startTime);
-            if(chosen){
-              const outs=extractOutcomes(chosen,bk);
-              ({h1,x,h2}=outcomesToHXA(outs));
-              const ts=getTimestamp(chosen);
-              extraInfo=" (snapshot: "+(ts?String(ts).replace("T"," ").slice(0,16):"?")+" · "+list.length+" no historico)";
-              if(debug) debugJson=chosen;
-            }else{
-              extraInfo=" (sem historico disponivel · "+list.length+" registos brutos)";
-              if(debug) debugJson=hist;
-            }
-          }else{
-            let bodyTxt="";
-            try{ bodyTxt=await res2.text(); }catch(e2){}
-            extraInfo=" (erro historico: HTTP "+res2.status+" "+bodyTxt.slice(0,150)+")";
-          }
-        }catch(e){ extraInfo=" (erro historico: "+e.message+")"; }
-      }
+      try{
+        const url2=`https://api.oddspapi.io/v4/odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bk}`;
+        const res2=await fetch(url2);
+        if(res2.ok){
+          const od=await res2.json();
+          const outs=extractOutcomes(od,bk);
+          ({h1,x,h2}=outcomesToHXA(outs));
+          if(debug) debugJson=od;
+        }else{
+          extraInfo=" (erro odds: HTTP "+res2.status+")";
+        }
+      }catch(e){ extraInfo=" (erro odds: "+e.message+")"; }
 
       const t1=fx.participant1Name||"?", t2=fx.participant2Name||"?";
       const when=(fx.startTime||"").replace("T"," ").slice(0,16);
       n++;
-      h+=`<div class=m><b>${when} ${esc(extraInfo)}</b>${esc(t1)} x ${esc(t2)}<div class=o><div>1: ${f(h1)}</div><div>X: ${f(x)}</div><div>2: ${f(h2)}</div></div><div class=fidrow>ID: <span class=fidval onclick="copyOne(this)">${esc(fx.fixtureId)}</span></div>${debugJson?`<div class=dbg>${esc(JSON.stringify(debugJson,null,1))}</div>`:""}</div>`;
-      t+=`${t1} x ${t2} - ${when}${mode==='close'?extraInfo:""} [ID: ${fx.fixtureId}]\n1: ${f(h1)} | X: ${f(x)} | 2: ${f(h2)}\n\n`;
+      h+=renderCard(when,extraInfo,t1,t2,h1,x,h2,fx.fixtureId,debugJson);
+      t+=renderTxt(t1,t2,when,extraInfo,h1,x,h2,fx.fixtureId);
       await new Promise(r=>setTimeout(r,900));
     }
 
@@ -208,6 +218,58 @@ async function run(){
   }catch(e){
     setSt("Erro: "+e.message,true);
   }
+}
+
+async function runClose(k,fid,bk,debug,kickoffVal,windowMin){
+  let h1=null,x=null,h2=null,extraInfo="",debugJson=null;
+  try{
+    const url2=`https://api.oddspapi.io/v4/historical-odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fid)}&bookmakers=${bk}`;
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),20000);
+    let res2;
+    try{
+      res2=await fetch(url2,{signal:ctrl.signal});
+    }finally{
+      clearTimeout(timer);
+    }
+    if(res2.ok){
+      const rawTxt=await res2.text();
+      let hist;
+      try{ hist=JSON.parse(rawTxt); }catch(e3){ hist=null; }
+      const list=Array.isArray(hist)?hist:(hist&&(hist.history||hist.data))||[];
+      const chosen=pickClosestToKickoff(list,kickoffVal||null,windowMin);
+      if(chosen){
+        const outs=extractOutcomes(chosen,bk);
+        ({h1,x,h2}=outcomesToHXA(outs));
+        const ts=getTimestamp(chosen);
+        extraInfo=" (snapshot: "+(ts?String(ts).replace("T"," ").slice(0,16):"?")+" · "+list.length+" no historico"+(kickoffVal?", janela "+windowMin+"min":"")+")";
+        if(debug) debugJson=chosen;
+      }else{
+        extraInfo=" (sem historico util · resposta tinha "+rawTxt.length+" caracteres)";
+        if(debug) debugJson={_previa_bruta_truncada: rawTxt.slice(0,3000)};
+      }
+    }else{
+      let bodyTxt="";
+      try{ bodyTxt=await res2.text(); }catch(e2){}
+      extraInfo=" (erro historico: HTTP "+res2.status+" "+bodyTxt.slice(0,150)+")";
+    }
+  }catch(e){ extraInfo=" (erro historico: "+(e.name==='AbortError'?"timeout 20s":e.message)+")"; }
+
+  const when=kickoffVal?kickoffVal.replace("T"," "):"";
+  const h=renderCard(when,extraInfo,"?","?",h1,x,h2,fid,debugJson);
+  const t=renderTxt("?","?",when,extraInfo,h1,x,h2,fid);
+  document.getElementById('r').innerHTML=h;
+  setSt("1 jogo mostrado");
+  txt=t.trim();
+  document.getElementById('cp').style.display='block';
+}
+
+function renderCard(when,extraInfo,t1,t2,h1,x,h2,fixtureId,debugJson){
+  return `<div class=m><b>${esc(when)} ${esc(extraInfo)}</b>${esc(t1)} x ${esc(t2)}<div class=o><div>1: ${f(h1)}</div><div>X: ${f(x)}</div><div>2: ${f(h2)}</div></div><div class=fidrow>ID: <span class=fidval onclick="copyOne(this)">${esc(fixtureId)}</span></div>${debugJson?`<div class=dbg>${esc(JSON.stringify(debugJson,null,1).slice(0,4000))}</div>`:""}</div>`;
+}
+
+function renderTxt(t1,t2,when,extraInfo,h1,x,h2,fixtureId){
+  return `${t1} x ${t2} - ${when}${extraInfo} [ID: ${fixtureId}]\n1: ${f(h1)} | X: ${f(x)} | 2: ${f(h2)}\n\n`;
 }
 
 function setSt(msg,err){
