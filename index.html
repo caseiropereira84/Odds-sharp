@@ -240,6 +240,23 @@ function describeShape(obj,depth,maxDepth){
   return typeof obj;
 }
 
+function extractHistoricalHXA(hist,bk,kickoffVal,windowMin){
+  try{
+    const market=hist.bookmakers[bk].markets["101"];
+    const outcomes=market.outcomes;
+    function getPriceFor(outcomeKey){
+      const arr=outcomes[outcomeKey]&&outcomes[outcomeKey].players&&outcomes[outcomeKey].players["0"];
+      if(!Array.isArray(arr)||arr.length===0) return {price:null,ts:null,total:0};
+      const chosen=pickClosestToKickoff(arr,kickoffVal||null,windowMin);
+      return {price:chosen?chosen.price:null, ts:chosen?getTimestamp(chosen):null, total:arr.length};
+    }
+    const h1o=getPriceFor("101"), xo=getPriceFor("102"), h2o=getPriceFor("103");
+    return {h1:h1o.price,x:xo.price,h2:h2o.price,ts1:h1o.ts,tsx:xo.ts,ts2:h2o.ts,tot1:h1o.total,totx:xo.total,tot2:h2o.total};
+  }catch(e){
+    return null;
+  }
+}
+
 async function runClose(k,fid,bk,debug,kickoffVal,windowMin){
   let h1=null,x=null,h2=null,extraInfo="",debugJson=null;
   try{
@@ -256,14 +273,12 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin){
       const rawTxt=await res2.text();
       let hist;
       try{ hist=JSON.parse(rawTxt); }catch(e3){ hist=null; }
-      const list=Array.isArray(hist)?hist:(hist&&(hist.history||hist.data))||[];
-      const chosen=pickClosestToKickoff(list,kickoffVal||null,windowMin);
-      if(chosen){
-        const outs=extractOutcomes(chosen,bk);
-        ({h1,x,h2}=outcomesToHXA(outs));
-        const ts=getTimestamp(chosen);
-        extraInfo=" (snapshot: "+(ts?String(ts).replace("T"," ").slice(0,16):"?")+" · "+list.length+" no historico"+(kickoffVal?", janela "+windowMin+"min":"")+")";
-        if(debug) debugJson=chosen;
+      const extracted = hist ? extractHistoricalHXA(hist,bk,kickoffVal,windowMin) : null;
+      const fmtTs=tt=>tt?String(tt).replace("T"," ").slice(0,16):"?";
+      if(extracted && (extracted.h1!=null||extracted.x!=null||extracted.h2!=null)){
+        h1=extracted.h1; x=extracted.x; h2=extracted.h2;
+        extraInfo=" (1:"+fmtTs(extracted.ts1)+" X:"+fmtTs(extracted.tsx)+" 2:"+fmtTs(extracted.ts2)+" · pontos "+extracted.tot1+"/"+extracted.totx+"/"+extracted.tot2+(kickoffVal?", janela "+windowMin+"min":", ultimo disponivel")+")";
+        if(debug) debugJson=extracted;
       }else{
         const shape=hist!=null?describeShape(hist):"JSON invalido/nao parseavel";
         let m101Shape="n/a";
@@ -271,8 +286,8 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin){
           const m101 = hist && hist.bookmakers && hist.bookmakers[bk] && hist.bookmakers[bk].markets && hist.bookmakers[bk].markets["101"];
           m101Shape = m101!=null ? describeShape(m101,0,5) : "market 101 nao encontrado nesta resposta";
         }catch(e4){ m101Shape="erro ao inspeccionar: "+e4.message; }
-        extraInfo=" (sem lista reconhecida · "+rawTxt.length+" chars · topo: "+shape+" · market101: "+m101Shape+")";
-        if(debug) debugJson={_forma_topo:shape,_forma_market101:m101Shape,_previa_bruta_truncada: rawTxt.slice(0,2000)};
+        extraInfo=" (sem preco extraido · "+rawTxt.length+" chars · topo: "+shape+" · market101: "+m101Shape+")";
+        if(debug) debugJson={_forma_topo:shape,_forma_market101:m101Shape};
       }
     }else{
       let bodyTxt="";
