@@ -220,20 +220,22 @@ async function run(){
   }
 }
 
-function describeShape(obj,depth){
+function describeShape(obj,depth,maxDepth){
   depth=depth||0;
+  maxDepth=maxDepth||3;
   if(obj===null||obj===undefined) return String(obj);
-  if(Array.isArray(obj)) return "array["+obj.length+"]"+(obj.length&&depth<1?" primeiro:"+describeShape(obj[0],depth+1):"");
+  if(Array.isArray(obj)){
+    const firstDesc=(obj.length&&depth<maxDepth)?" primeiro:"+describeShape(obj[0],depth+1,maxDepth):"";
+    return "array["+obj.length+"]"+firstDesc;
+  }
   if(typeof obj==='object'){
     const keys=Object.keys(obj);
-    if(depth>=1) return "object{"+keys.length+"keys: "+keys.slice(0,8).join(",")+"}";
+    if(depth>=maxDepth) return "object{"+keys.length+"keys: "+keys.slice(0,8).join(",")+"}";
     const parts=keys.slice(0,12).map(kk=>{
       const v=obj[kk];
-      if(Array.isArray(v)) return kk+"=array["+v.length+"]";
-      if(v&&typeof v==='object') return kk+"=object{"+Object.keys(v).length+"k}";
-      return kk+"="+typeof v;
+      return kk+"=("+describeShape(v,depth+1,maxDepth)+")";
     });
-    return "object{"+keys.length+"keys}("+parts.join(" | ")+(keys.length>12?" | ...":"")+")";
+    return "object{"+keys.length+"keys}["+parts.join(" | ")+(keys.length>12?" | ...":"")+"]";
   }
   return typeof obj;
 }
