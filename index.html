@@ -42,9 +42,20 @@ function setMode(m){
 }
 
 async function getFixturesList(k,comp,d1,d2,fid){
+  // Se ha fixtureId, tentamos primeiro filtrar a lista por datas (para obter nomes/startTime).
+  // Se nao aparecer nessa janela, devolvemos uma fixture minima so com o ID.
   const url1=`https://api.oddspapi.io/v4/fixtures?apiKey=${encodeURIComponent(k)}&sportId=10&from=${d1}&to=${d2}`;
-  const res1=await fetch(url1);
-  if(!res1.ok) throw new Error("Erro fixtures: "+res1.status);
+  let res1;
+  try{
+    res1=await fetch(url1);
+  }catch(e){
+    throw new Error("Falha de rede em /fixtures: "+e.message);
+  }
+  if(!res1.ok){
+    let bodyTxt="";
+    try{ bodyTxt=await res1.text(); }catch(e2){}
+    throw new Error("Erro fixtures: HTTP "+res1.status+" "+bodyTxt.slice(0,150));
+  }
   const fixtures=await res1.json();
   if(!Array.isArray(fixtures)) throw new Error("Resposta inesperada da API (fixtures)");
 
@@ -52,6 +63,7 @@ async function getFixturesList(k,comp,d1,d2,fid){
   if(fid){
     matched=matched.filter(fx=>String(fx.fixtureId)===String(fid));
     if(matched.length===0){
+      // fallback: fixture minima, sem metadata confirmada
       matched=[{fixtureId:fid,participant1Name:"?",participant2Name:"?",startTime:"",tournamentName:"",hasOdds:true}];
     }
   }else{
@@ -65,6 +77,7 @@ async function getFixturesList(k,comp,d1,d2,fid){
 }
 
 function extractOutcomes(obj,bk){
+  // Tenta varios formatos possiveis da resposta (odds ao vivo e historico podem diferir).
   const tries=[
     ()=>obj.bookmakerOdds[bk].markets["101"].outcomes,
     ()=>obj.markets["101"].outcomes,
@@ -98,6 +111,7 @@ function getTimestamp(item){
 function pickClosestToKickoff(history,startTimeIso){
   if(!Array.isArray(history)||history.length===0) return null;
   if(!startTimeIso){
+    // sem startTime conhecido: assume o ultimo snapshot (mais recente) como fecho
     return history[history.length-1];
   }
   const target=new Date(startTimeIso).getTime();
@@ -110,6 +124,7 @@ function pickClosestToKickoff(history,startTimeIso){
     if(diff<bestDiff){bestDiff=diff;best=item}
     if(t<=target && diff<bestBeforeDiff){bestBeforeDiff=diff;bestBefore=item}
   }
+  // preferimos o snapshot mais recente ANTES do kickoff (fecho real); se nao houver, usamos o mais proximo geral
   return bestBefore||best;
 }
 
@@ -147,8 +162,10 @@ async function run(){
             const outs=extractOutcomes(od,bk);
             ({h1,x,h2}=outcomesToHXA(outs));
             if(debug) debugJson=od;
+          }else{
+            extraInfo=" (erro odds: HTTP "+res2.status+")";
           }
-        }catch(e){}
+        }catch(e){ extraInfo=" (erro odds: "+e.message+")"; }
       }else{
         try{
           const url2=`https://api.oddspapi.io/v4/historical-odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bk}`;
@@ -164,10 +181,15 @@ async function run(){
               extraInfo=" (snapshot: "+(ts?String(ts).replace("T"," ").slice(0,16):"?")+" · "+list.length+" no historico)";
               if(debug) debugJson=chosen;
             }else{
-              extraInfo=" (sem historico disponivel)";
+              extraInfo=" (sem historico disponivel · "+list.length+" registos brutos)";
+              if(debug) debugJson=hist;
             }
+          }else{
+            let bodyTxt="";
+            try{ bodyTxt=await res2.text(); }catch(e2){}
+            extraInfo=" (erro historico: HTTP "+res2.status+" "+bodyTxt.slice(0,150)+")";
           }
-        }catch(e){}
+        }catch(e){ extraInfo=" (erro historico: "+e.message+")"; }
       }
 
       const t1=fx.participant1Name||"?", t2=fx.participant2Name||"?";
