@@ -266,8 +266,13 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin){
         if(debug) debugJson=chosen;
       }else{
         const shape=hist!=null?describeShape(hist):"JSON invalido/nao parseavel";
-        extraInfo=" (sem lista reconhecida · "+rawTxt.length+" chars · forma: "+shape+")";
-        if(debug) debugJson={_forma:shape,_previa_bruta_truncada: rawTxt.slice(0,2000)};
+        let m101Shape="n/a";
+        try{
+          const m101 = hist && hist.bookmakers && hist.bookmakers[bk] && hist.bookmakers[bk].markets && hist.bookmakers[bk].markets["101"];
+          m101Shape = m101!=null ? describeShape(m101,0,5) : "market 101 nao encontrado nesta resposta";
+        }catch(e4){ m101Shape="erro ao inspeccionar: "+e4.message; }
+        extraInfo=" (sem lista reconhecida · "+rawTxt.length+" chars · topo: "+shape+" · market101: "+m101Shape+")";
+        if(debug) debugJson={_forma_topo:shape,_forma_market101:m101Shape,_previa_bruta_truncada: rawTxt.slice(0,2000)};
       }
     }else{
       let bodyTxt="";
