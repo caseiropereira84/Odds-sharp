@@ -220,6 +220,24 @@ async function run(){
   }
 }
 
+function describeShape(obj,depth){
+  depth=depth||0;
+  if(obj===null||obj===undefined) return String(obj);
+  if(Array.isArray(obj)) return "array["+obj.length+"]"+(obj.length&&depth<1?" primeiro:"+describeShape(obj[0],depth+1):"");
+  if(typeof obj==='object'){
+    const keys=Object.keys(obj);
+    if(depth>=1) return "object{"+keys.length+"keys: "+keys.slice(0,8).join(",")+"}";
+    const parts=keys.slice(0,12).map(kk=>{
+      const v=obj[kk];
+      if(Array.isArray(v)) return kk+"=array["+v.length+"]";
+      if(v&&typeof v==='object') return kk+"=object{"+Object.keys(v).length+"k}";
+      return kk+"="+typeof v;
+    });
+    return "object{"+keys.length+"keys}("+parts.join(" | ")+(keys.length>12?" | ...":"")+")";
+  }
+  return typeof obj;
+}
+
 async function runClose(k,fid,bk,debug,kickoffVal,windowMin){
   let h1=null,x=null,h2=null,extraInfo="",debugJson=null;
   try{
@@ -245,8 +263,9 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin){
         extraInfo=" (snapshot: "+(ts?String(ts).replace("T"," ").slice(0,16):"?")+" · "+list.length+" no historico"+(kickoffVal?", janela "+windowMin+"min":"")+")";
         if(debug) debugJson=chosen;
       }else{
-        extraInfo=" (sem historico util · resposta tinha "+rawTxt.length+" caracteres)";
-        if(debug) debugJson={_previa_bruta_truncada: rawTxt.slice(0,3000)};
+        const shape=hist!=null?describeShape(hist):"JSON invalido/nao parseavel";
+        extraInfo=" (sem lista reconhecida · "+rawTxt.length+" chars · forma: "+shape+")";
+        if(debug) debugJson={_forma:shape,_previa_bruta_truncada: rawTxt.slice(0,2000)};
       }
     }else{
       let bodyTxt="";
