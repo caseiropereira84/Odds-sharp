@@ -20,7 +20,7 @@
 <div id="closeFields" style="display:none">
 <input id=kickoff type="datetime-local">
 <div class="hint">Hora do kickoff — OBRIGATORIA no modo Fecho. O historico inclui precos in-play (durante e apos o jogo); sem esta hora nao ha forma de distinguir o preco de fecho pre-jogo do preco a meio do jogo.</div>
-<input id=window type="number" value="60" min="1">
+<input id=winMin type="number" value="60" min="1">
 <div class="hint">Janela antes do kickoff em minutos (recomendado 30-120). Escolhe o preco mais recente DENTRO dessa janela e ANTES do kickoff.</div>
 </div>
 
@@ -156,6 +156,7 @@ function pickClosestToKickoff(history,startTimeIso,windowMinutes){
 }
 
 async function run(){
+ try{
   const k=document.getElementById('k').value.trim();
   if(!k){setSt("Falta API key",true);return}
   const fid=document.getElementById('fid').value.trim();
@@ -169,11 +170,9 @@ async function run(){
     if(!fid){setSt("Falta o fixtureId (obrigatorio no modo Fecho)",true);return}
     const kickoffVal=document.getElementById('kickoff').value;
     if(!kickoffVal){setSt("Falta a hora do kickoff (obrigatoria no modo Fecho, para nao misturar precos in-play)",true);return}
-    const windowMin=parseInt(document.getElementById('window').value,10)||60;
-    const teamHome=document.getElementById('teamHome').value.trim()||"?";
-    const teamAway=document.getElementById('teamAway').value.trim()||"?";
+    const windowMin=parseInt(document.getElementById('winMin').value,10)||60;
     setSt("A puxar historico "+bk+"...");
-    await runClose(k,fid,bk,debug,kickoffVal,windowMin,teamHome,teamAway);
+    await runClose(k,fid,bk,debug,kickoffVal,windowMin,"?","?");
     return;
   }
 
@@ -221,6 +220,9 @@ async function run(){
   }catch(e){
     setSt("Erro: "+e.message,true);
   }
+ }catch(eOuter){
+   setSt("Erro inesperado: "+eOuter.message,true);
+ }
 }
 
 function describeShape(obj,depth,maxDepth){
