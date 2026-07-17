@@ -347,7 +347,7 @@ async function runLeagues(k,q){
 
     let h="",t="Competicoes - '"+q+"'\n\n";
     for(const comp of matched){
-      h+=`<div class=m><b>${esc(comp.categoryName||"")}</b>${esc(comp.tournamentName||"?")}<div class=fidrow>tournamentId: <span class=fidval onclick="copyOne(this)">${esc(comp.tournamentId)}</span> · futuros: ${comp.futureFixtures||0} · ao vivo: ${comp.liveFixtures||0}</div></div>`;
+      h+=`<div class=m><b>${esc(comp.categoryName||"")}</b>${esc(comp.tournamentName||"?")}<div class=fidrow>tournamentId: <span class=fidval onclick="useLeague(this,'${esc(comp.tournamentId)}')">${esc(comp.tournamentId)}</span> · futuros: ${comp.futureFixtures||0} · ao vivo: ${comp.liveFixtures||0}</div></div>`;
       t+=`${comp.tournamentName} (${comp.categoryName||"?"}) - tournamentId: ${comp.tournamentId}\n`;
     }
     document.getElementById('r').innerHTML=h;
@@ -423,6 +423,15 @@ function setSt(msg,err){
   const s=document.getElementById('st');
   s.textContent=msg;
   s.style.color=err?"#ff6b6b":"#888";
+}
+
+function useLeague(el,tid){
+  document.getElementById('comp').value=tid;
+  const old=el.textContent;
+  el.textContent="Usado!";
+  setTimeout(()=>{el.textContent=old},1000);
+  setMode('live');
+  document.getElementById('comp').scrollIntoView({behavior:'smooth',block:'center'});
 }
 
 function copyOne(el){
