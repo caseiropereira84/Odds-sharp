@@ -6,13 +6,16 @@
   <div class="tab active" id="tabLive" onclick="setMode('live')">Odds ao vivo (análise)</div>
   <div class="tab" id="tabClose" onclick="setMode('close')">Odds de fecho (histórico)</div>
 </div>
+<div class="tabs">
+  <div class="tab" id="tabLeagues" onclick="setMode('leagues')" style="flex:1">Procurar nome exacto da liga</div>
+</div>
 
 <input id=k placeholder="API key OddsPapi">
 <input id=fid placeholder="ID do jogo (fixtureId)">
 <div class="hint" id="fidHint">No modo ao vivo, o fixtureId e opcional (filtra so este jogo). No modo Fecho, e obrigatorio.</div>
 
 <div id="liveFields">
-<input id=comp placeholder="Nome da competicao (ex: World Cup)" value="World Cup">
+<input id=comp placeholder="Nome (texto livre) OU tournamentId exacto (numero)">
 <input id=d1 type=date>
 <input id=d2 type=date>
 </div>
@@ -22,6 +25,11 @@
 <div class="hint">Hora do kickoff — OBRIGATORIA no modo Fecho. O historico inclui precos in-play (durante e apos o jogo); sem esta hora nao ha forma de distinguir o preco de fecho pre-jogo do preco a meio do jogo.</div>
 <input id=winMin type="number" value="60" min="1">
 <div class="hint">Janela antes do kickoff em minutos (recomendado 30-120). Escolhe o preco mais recente DENTRO dessa janela e ANTES do kickoff.</div>
+</div>
+
+<div id="leaguesFields" style="display:none">
+<input id=leagueSearch placeholder="Escreve parte do nome (ex: brasil, europa, premier)">
+<div class="hint">Lista todas as competicoes cujo tournamentName ou categoryName contem este texto, com o tournamentId exacto. Usa esse ID (nao o nome) para pesquisas futuras sem ambiguidade.</div>
 </div>
 
 <select id=bk><option value=pinnacle>Pinnacle</option><option value=polymarket>Polymarket</option><option value=kalshi>Kalshi</option><option value=fanduel>FanDuel</option><option value=draftkings>DraftKings</option><option value=bet365>Bet365</option></select>
@@ -35,10 +43,13 @@
 <script>
 let txt="";
 let mode="live";
+function localDateStr(d){
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 const today=new Date();
-const in10=new Date(today.getTime()+9*86400000);
-document.getElementById('d1').value=today.toISOString().slice(0,10);
-document.getElementById('d2').value=in10.toISOString().slice(0,10);
+document.getElementById('d1').value=localDateStr(today);
+document.getElementById('d2').value=localDateStr(today);
 
 function fmtPT(iso){
   if(!iso) return "?";
@@ -59,14 +70,20 @@ function setMode(m){
   mode=m;
   document.getElementById('tabLive').classList.toggle('active',m==='live');
   document.getElementById('tabClose').classList.toggle('active',m==='close');
+  document.getElementById('tabLeagues').classList.toggle('active',m==='leagues');
   document.getElementById('liveFields').style.display=(m==='live')?'block':'none';
   document.getElementById('closeFields').style.display=(m==='close')?'block':'none';
+  document.getElementById('leaguesFields').style.display=(m==='leagues')?'block':'none';
+  document.getElementById('fid').style.display=(m==='leagues')?'none':'block';
+  document.getElementById('fidHint').style.display=(m==='leagues')?'none':'block';
+  document.getElementById('bk').style.display=(m==='leagues')?'none':'block';
   document.getElementById('fidHint').textContent = (m==='close')
     ? "Obrigatorio no modo Fecho: cola aqui o fixtureId do jogo que queres fechar."
     : "No modo ao vivo, o fixtureId e opcional (filtra so este jogo).";
   document.getElementById('r').innerHTML="";
   document.getElementById('cp').style.display='none';
-  setSt(m==='close' ? "Modo fecho: cola o fixtureId e (opcional) a hora do kickoff." : "Modo ao vivo: odds actuais.");
+  const msgs={close:"Modo fecho: cola o fixtureId e (opcional) a hora do kickoff.", leagues:"Modo ligas: escreve parte do nome e obtem o tournamentId exacto.", live:"Modo ao vivo: odds actuais."};
+  setSt(msgs[m]);
 }
 
 async function getFixturesList(k,comp,d1,d2,fid){
@@ -77,7 +94,11 @@ async function getFixturesList(k,comp,d1,d2,fid){
   const d2Adjusted=new Date(d2+"T00:00:00Z");
   d2Adjusted.setUTCDate(d2Adjusted.getUTCDate()+1);
   const d2Str=d2Adjusted.toISOString().slice(0,10);
-  const url1=`https://api.oddspapi.io/v4/fixtures?apiKey=${encodeURIComponent(k)}&sportId=10&from=${d1}&to=${d2Str}`;
+  // Se o campo 'competicao' for so digitos, tratamos como tournamentId exacto (filtro no servidor).
+  const compTrim=(comp||"").trim();
+  const isNumericId=/^\d+$/.test(compTrim);
+  const tIdParam=isNumericId?`&tournamentId=${encodeURIComponent(compTrim)}`:"";
+  const url1=`https://api.oddspapi.io/v4/fixtures?apiKey=${encodeURIComponent(k)}&sportId=10&from=${d1}&to=${d2Str}${tIdParam}`;
   let res1;
   try{
     res1=await fetch(url1);
@@ -99,7 +120,7 @@ async function getFixturesList(k,comp,d1,d2,fid){
       // fallback: fixture minima, sem metadata confirmada
       matched=[{fixtureId:fid,participant1Name:"?",participant2Name:"?",startTime:"",tournamentName:"",hasOdds:true}];
     }
-  }else{
+  }else if(!isNumericId){
     const c=(comp||"").toLowerCase();
     matched=matched.filter(fx=>{
       const tn=(fx.tournamentName||"").toLowerCase();
@@ -182,6 +203,14 @@ async function run(){
 
   document.getElementById('r').innerHTML="";
   document.getElementById('cp').style.display='none';
+
+  if(mode==='leagues'){
+    const q=document.getElementById('leagueSearch').value.trim().toLowerCase();
+    if(!q){setSt("Escreve parte do nome da liga/pais",true);return}
+    setSt("A puxar lista de competicoes...");
+    await runLeagues(k,q);
+    return;
+  }
 
   if(mode==='close'){
     if(!fid){setSt("Falta o fixtureId (obrigatorio no modo Fecho)",true);return}
@@ -294,6 +323,39 @@ async function fetchTeamNames(k,fid,kickoffVal){
     return found ? {home:found.participant1Name||null, away:found.participant2Name||null} : null;
   }catch(e){
     return null;
+  }
+}
+
+async function runLeagues(k,q){
+  try{
+    const url=`https://api.oddspapi.io/v4/tournaments?apiKey=${encodeURIComponent(k)}&sportId=10`;
+    const res=await fetch(url);
+    if(!res.ok){
+      let bodyTxt="";
+      try{ bodyTxt=await res.text(); }catch(e2){}
+      setSt("Erro tournaments: HTTP "+res.status+" "+bodyTxt.slice(0,150),true);
+      return;
+    }
+    const list=await res.json();
+    if(!Array.isArray(list)){ setSt("Resposta inesperada da API (tournaments)",true); return; }
+    const matched=list.filter(t=>{
+      const n=(t.tournamentName||"").toLowerCase();
+      const c=(t.categoryName||"").toLowerCase();
+      return n.includes(q)||c.includes(q);
+    });
+    if(matched.length===0){ setSt("0 competicoes encontradas para '"+q+"'"); return; }
+
+    let h="",t="Competicoes - '"+q+"'\n\n";
+    for(const comp of matched){
+      h+=`<div class=m><b>${esc(comp.categoryName||"")}</b>${esc(comp.tournamentName||"?")}<div class=fidrow>tournamentId: <span class=fidval onclick="copyOne(this)">${esc(comp.tournamentId)}</span> · futuros: ${comp.futureFixtures||0} · ao vivo: ${comp.liveFixtures||0}</div></div>`;
+      t+=`${comp.tournamentName} (${comp.categoryName||"?"}) - tournamentId: ${comp.tournamentId}\n`;
+    }
+    document.getElementById('r').innerHTML=h;
+    setSt(matched.length+" competicao(oes) encontradas");
+    txt=t.trim();
+    document.getElementById('cp').style.display='block';
+  }catch(e){
+    setSt("Erro: "+e.message,true);
   }
 }
 
