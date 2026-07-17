@@ -40,6 +40,18 @@ const in10=new Date(today.getTime()+9*86400000);
 document.getElementById('d1').value=today.toISOString().slice(0,10);
 document.getElementById('d2').value=in10.toISOString().slice(0,10);
 
+function fmtPT(iso){
+  if(!iso) return "?";
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return String(iso).replace("T"," ").slice(0,16);
+  const parts=new Intl.DateTimeFormat('pt-PT',{
+    timeZone:'Europe/Lisbon', year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', hour12:false
+  }).formatToParts(d);
+  const g=t=>parts.find(p=>p.type===t).value;
+  return `${g('year')}-${g('month')}-${g('day')} ${g('hour')}:${g('minute')} PT`;
+}
+
 function f(v){return v==null?"-":Number(v).toFixed(2)}
 function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
 
@@ -205,7 +217,7 @@ async function run(){
       }catch(e){ extraInfo=" (erro odds: "+e.message+")"; }
 
       const t1=fx.participant1Name||"?", t2=fx.participant2Name||"?";
-      const when=(fx.startTime||"").replace("T"," ").slice(0,16);
+      const when=fmtPT(fx.startTime);
       n++;
       h+=renderCard(when,extraInfo,t1,t2,h1,x,h2,fx.fixtureId,debugJson);
       t+=renderTxt(t1,t2,when,extraInfo,h1,x,h2,fx.fixtureId);
@@ -297,7 +309,7 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin,teamHome,teamAway){
       let hist;
       try{ hist=JSON.parse(rawTxt); }catch(e3){ hist=null; }
       const extracted = hist ? extractHistoricalHXA(hist,bk,kickoffVal,windowMin) : null;
-      const fmtTs=tt=>tt?String(tt).replace("T"," ").slice(0,16):"?";
+      const fmtTs=tt=>tt?fmtPT(tt):"?";
       if(extracted && (extracted.h1!=null||extracted.x!=null||extracted.h2!=null)){
         h1=extracted.h1; x=extracted.x; h2=extracted.h2;
         extraInfo=" (1:"+fmtTs(extracted.ts1)+" X:"+fmtTs(extracted.tsx)+" 2:"+fmtTs(extracted.ts2)+" · pontos "+extracted.tot1+"/"+extracted.totx+"/"+extracted.tot2+(kickoffVal?", janela "+windowMin+"min":", ultimo disponivel")+")";
@@ -319,7 +331,7 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin,teamHome,teamAway){
     }
   }catch(e){ extraInfo=" (erro historico: "+(e.name==='AbortError'?"timeout 20s":e.message)+")"; }
 
-  const when=kickoffVal?kickoffVal.replace("T"," "):"";
+  const when=kickoffVal?fmtPT(kickoffVal):"";
   const auto=await fetchTeamNames(k,fid,kickoffVal);
   const finalHome=(auto&&auto.home)||teamHome;
   const finalAway=(auto&&auto.away)||teamAway;
