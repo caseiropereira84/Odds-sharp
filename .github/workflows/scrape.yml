@@ -1,0 +1,34 @@
+name: Scrape AskGamblers Sportsbooks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 pandas tqdm
+
+      - name: Run scraper
+        run: python scraper/askgamblers_scraper.py --delay 1.5 --max-pages 2
+
+      - name: Commit and push CSV
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/askgamblers_sportsbooks.csv
+          git diff --staged --quiet || git commit -m "Update askgamblers_sportsbooks.csv [automated]"
+          git push
