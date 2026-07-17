@@ -1,0 +1,34 @@
+name: Scrape List Of All Bookmakers (Playwright, Europa transversal)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4 pandas playwright
+          playwright install --with-deps chromium
+
+      - name: Run LOAB scraper (Playwright, multi-país)
+        run: python scraper/scrape_loab_playwright.py --countries pt fr ee lv lt --delay 2.0
+
+      - name: Commit and push CSVs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/loab_bookmakers.csv data/loab_bookmakers_transversal.csv
+          git diff --staged --quiet || git commit -m "Update loab_bookmakers CSVs (Playwright) [automated]"
+          git push
