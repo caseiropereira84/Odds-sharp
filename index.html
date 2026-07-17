@@ -72,7 +72,12 @@ function setMode(m){
 async function getFixturesList(k,comp,d1,d2,fid){
   // Se ha fixtureId, tentamos primeiro filtrar a lista por datas (para obter nomes/startTime).
   // Se nao aparecer nessa janela, devolvemos uma fixture minima so com o ID.
-  const url1=`https://api.oddspapi.io/v4/fixtures?apiKey=${encodeURIComponent(k)}&sportId=10&from=${d1}&to=${d2}`;
+  // Nota: a API trata 'to' como INICIO desse dia (exclusivo), nao fim do dia.
+  // Somamos 1 dia ao 'to' para o intervalo escolhido pelo utilizador ficar sempre inclusivo.
+  const d2Adjusted=new Date(d2+"T00:00:00Z");
+  d2Adjusted.setUTCDate(d2Adjusted.getUTCDate()+1);
+  const d2Str=d2Adjusted.toISOString().slice(0,10);
+  const url1=`https://api.oddspapi.io/v4/fixtures?apiKey=${encodeURIComponent(k)}&sportId=10&from=${d1}&to=${d2Str}`;
   let res1;
   try{
     res1=await fetch(url1);
