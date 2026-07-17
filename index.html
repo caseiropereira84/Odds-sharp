@@ -7,7 +7,8 @@
   <div class="tab" id="tabClose" onclick="setMode('close')">Odds de fecho (histórico)</div>
 </div>
 <div class="tabs">
-  <div class="tab" id="tabLeagues" onclick="setMode('leagues')" style="flex:1">Procurar nome exacto da liga</div>
+  <div class="tab" id="tabLeagues" onclick="setMode('leagues')">Procurar liga</div>
+  <div class="tab" id="tabBookmakers" onclick="setMode('bookmakers')">Procurar bookmaker</div>
 </div>
 
 <input id=k placeholder="API key OddsPapi">
@@ -30,6 +31,11 @@
 <div id="leaguesFields" style="display:none">
 <input id=leagueSearch placeholder="Escreve parte do nome (ex: brasil, europa, premier)">
 <div class="hint">Lista todas as competicoes cujo tournamentName ou categoryName contem este texto, com o tournamentId exacto. Usa esse ID (nao o nome) para pesquisas futuras sem ambiguidade.</div>
+</div>
+
+<div id="bookmakersFields" style="display:none">
+<input id=bkSearch placeholder="Escreve parte do nome (ex: wallace, betconstruct, pinnacle)">
+<div class="hint">Lista todos os bookmakers cujo slug ou nome contem este texto. Usa o slug exacto no selector de bookmaker para pesquisas futuras.</div>
 </div>
 
 <select id=bk><option value=pinnacle>Pinnacle</option><option value=polymarket>Polymarket</option><option value=kalshi>Kalshi</option><option value=fanduel>FanDuel</option><option value=draftkings>DraftKings</option><option value=bet365>Bet365</option></select>
@@ -71,18 +77,21 @@ function setMode(m){
   document.getElementById('tabLive').classList.toggle('active',m==='live');
   document.getElementById('tabClose').classList.toggle('active',m==='close');
   document.getElementById('tabLeagues').classList.toggle('active',m==='leagues');
+  document.getElementById('tabBookmakers').classList.toggle('active',m==='bookmakers');
   document.getElementById('liveFields').style.display=(m==='live')?'block':'none';
   document.getElementById('closeFields').style.display=(m==='close')?'block':'none';
   document.getElementById('leaguesFields').style.display=(m==='leagues')?'block':'none';
-  document.getElementById('fid').style.display=(m==='leagues')?'none':'block';
-  document.getElementById('fidHint').style.display=(m==='leagues')?'none':'block';
-  document.getElementById('bk').style.display=(m==='leagues')?'none':'block';
+  document.getElementById('bookmakersFields').style.display=(m==='bookmakers')?'block':'none';
+  const hideCommon=(m==='leagues'||m==='bookmakers');
+  document.getElementById('fid').style.display=hideCommon?'none':'block';
+  document.getElementById('fidHint').style.display=hideCommon?'none':'block';
+  document.getElementById('bk').style.display=hideCommon?'none':'block';
   document.getElementById('fidHint').textContent = (m==='close')
     ? "Obrigatorio no modo Fecho: cola aqui o fixtureId do jogo que queres fechar."
     : "No modo ao vivo, o fixtureId e opcional (filtra so este jogo).";
   document.getElementById('r').innerHTML="";
   document.getElementById('cp').style.display='none';
-  const msgs={close:"Modo fecho: cola o fixtureId e (opcional) a hora do kickoff.", leagues:"Modo ligas: escreve parte do nome e obtem o tournamentId exacto.", live:"Modo ao vivo: odds actuais."};
+  const msgs={close:"Modo fecho: cola o fixtureId e (opcional) a hora do kickoff.", leagues:"Modo ligas: escreve parte do nome e obtem o tournamentId exacto.", bookmakers:"Modo bookmakers: escreve parte do nome e ve os slugs disponiveis.", live:"Modo ao vivo: odds actuais."};
   setSt(msgs[m]);
 }
 
@@ -209,6 +218,14 @@ async function run(){
     if(!q){setSt("Escreve parte do nome da liga/pais",true);return}
     setSt("A puxar lista de competicoes...");
     await runLeagues(k,q);
+    return;
+  }
+
+  if(mode==='bookmakers'){
+    const q=document.getElementById('bkSearch').value.trim().toLowerCase();
+    if(!q){setSt("Escreve parte do nome do bookmaker",true);return}
+    setSt("A puxar lista de bookmakers...");
+    await runBookmakers(k,q);
     return;
   }
 
@@ -352,6 +369,40 @@ async function runLeagues(k,q){
     }
     document.getElementById('r').innerHTML=h;
     setSt(matched.length+" competicao(oes) encontradas");
+    txt=t.trim();
+    document.getElementById('cp').style.display='block';
+  }catch(e){
+    setSt("Erro: "+e.message,true);
+  }
+}
+
+async function runBookmakers(k,q){
+  try{
+    const url=`https://api.oddspapi.io/v4/bookmakers?apiKey=${encodeURIComponent(k)}`;
+    const res=await fetch(url);
+    if(!res.ok){
+      let bodyTxt="";
+      try{ bodyTxt=await res.text(); }catch(e2){}
+      setSt("Erro bookmakers: HTTP "+res.status+" "+bodyTxt.slice(0,150),true);
+      return;
+    }
+    const list=await res.json();
+    if(!Array.isArray(list)){ setSt("Resposta inesperada da API (bookmakers)",true); return; }
+    const matched=list.filter(b=>{
+      const s=(b.slug||"").toLowerCase();
+      const n=(b.name||b.bookmakerName||"").toLowerCase();
+      return s.includes(q)||n.includes(q);
+    });
+    if(matched.length===0){ setSt("0 bookmakers encontrados para '"+q+"' (total disponivel: "+list.length+")"); return; }
+
+    let h="",t="Bookmakers - '"+q+"'\n\n";
+    for(const b of matched){
+      const nome=b.name||b.bookmakerName||b.slug;
+      h+=`<div class=m><b>slug</b>${esc(nome)}<div class=fidrow>slug: <span class=fidval onclick="copyOne(this)">${esc(b.slug)}</span></div></div>`;
+      t+=`${nome} - slug: ${b.slug}\n`;
+    }
+    document.getElementById('r').innerHTML=h;
+    setSt(matched.length+" bookmaker(s) encontrados (de "+list.length+" no total)");
     txt=t.trim();
     document.getElementById('cp').style.display='block';
   }catch(e){
