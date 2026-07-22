@@ -1,5 +1,5 @@
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Odds</title>
-<style>body{background:#0a0e14;color:#eee;font-family:-apple-system,sans-serif;padding:16px}input,select{width:100%;padding:12px;margin:6px 0;background:#1a2234;color:#fff;border:1px solid #333;border-radius:8px;font-size:16px;box-sizing:border-box}button{width:100%;padding:14px;background:#5b8dff;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;margin-top:8px}.m{padding:10px;border-bottom:1px solid #333}.m b{font-size:11px;color:#7d8aa8;display:block}.o{display:flex;gap:6px;margin-top:6px}.o div{flex:1;background:#1a2234;padding:6px;text-align:center;border-radius:6px}#st{text-align:center;color:#888;padding:8px;font-size:13px;min-height:18px}.tabs{display:flex;gap:6px;margin:10px 0}.tab{flex:1;padding:10px;text-align:center;background:#1a2234;border-radius:8px;border:1px solid #333;font-size:14px;cursor:pointer}.tab.active{background:#5b8dff;border-color:#5b8dff}.hint{font-size:12px;color:#7d8aa8;margin:2px 0 8px}.dbg{background:#111826;border:1px solid #333;border-radius:8px;padding:10px;margin-top:8px;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#8fa}.chk{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#aaa}.chk input{width:auto;margin:0}.fidrow{margin-top:6px;font-size:11px;color:#7d8aa8}.fidval{color:#5b8dff;font-weight:bold;text-decoration:underline;cursor:pointer}</style></head>
+<style>body{background:#0a0e14;color:#eee;font-family:-apple-system,sans-serif;padding:16px}input,select{width:100%;padding:12px;margin:6px 0;background:#1a2234;color:#fff;border:1px solid #333;border-radius:8px;font-size:16px;box-sizing:border-box}button{width:100%;padding:14px;background:#5b8dff;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;margin-top:8px}.m{padding:10px;border-bottom:1px solid #333}.m b{font-size:11px;color:#7d8aa8;display:block}.o{display:flex;gap:6px;margin-top:6px}.o div{flex:1;background:#1a2234;padding:6px;text-align:center;border-radius:6px}#st{text-align:center;color:#888;padding:8px;font-size:13px;min-height:18px}.tabs{display:flex;gap:6px;margin:10px 0}.tab{flex:1;padding:10px;text-align:center;background:#1a2234;border-radius:8px;border:1px solid #333;font-size:14px;cursor:pointer}.tab.active{background:#5b8dff;border-color:#5b8dff}.hint{font-size:12px;color:#7d8aa8;margin:2px 0 8px}.dbg{background:#111826;border:1px solid #333;border-radius:8px;padding:10px;margin-top:8px;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#8fa}.chk{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#aaa}.chk input{width:auto;margin:0}.fidrow{margin-top:6px;font-size:11px;color:#7d8aa8}.fidval{color:#5b8dff;font-weight:bold;text-decoration:underline;cursor:pointer}.bkrow{margin-top:6px}.bklabel{font-size:11px;color:#5b8dff;font-weight:bold;display:block}</style></head>
 <body><h2>Odds Sharp</h2>
 
 <div class="tabs">
@@ -19,6 +19,8 @@
 <input id=comp placeholder="Nome (texto livre) OU tournamentId exacto (numero)">
 <input id=d1 type=date>
 <input id=d2 type=date>
+<input id=liveTime type="time">
+<div class="hint">Hora do kickoff (opcional, hora de Portugal). Se preenchida, mostra so jogos com esse kickoff exacto — util em jornadas UEFA com varios horarios no mesmo dia.</div>
 </div>
 
 <div id="closeFields" style="display:none">
@@ -46,6 +48,9 @@
 </div>
 
 <select id=bk><option value=pinnacle>Pinnacle</option><option value=polymarket>Polymarket</option><option value=kalshi>Kalshi</option><option value=fanduel>FanDuel</option><option value=draftkings>DraftKings</option><option value=bet365>Bet365</option></select>
+
+<input id=bk2 placeholder="Bookmaker 2 (opcional) — slug, ex: wallacebet, betclic">
+<div class="hint" id="bk2Hint">Deixa vazio para ver so o bookmaker 1. Preenche com um slug exacto (usa o separador "Procurar bookmaker" para o encontrar) para puxar e comparar odds de dois bookmakers no mesmo ecra — o 1 pode ser a Pinnacle ou outro.</div>
 
 <div class="chk"><input type="checkbox" id="dbg"> <label for="dbg">Modo debug (mostra JSON em bruto do snapshot escolhido)</label></div>
 
@@ -76,6 +81,28 @@ function fmtPT(iso){
   return `${g('year')}-${g('month')}-${g('day')} ${g('hour')}:${g('minute')} PT`;
 }
 
+function ptMinutesOfDay(iso){
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return null;
+  const parts=new Intl.DateTimeFormat('pt-PT',{
+    timeZone:'Europe/Lisbon', hour:'2-digit', minute:'2-digit', hour12:false
+  }).formatToParts(d);
+  const h=parseInt(parts.find(p=>p.type==='hour').value,10);
+  const m=parseInt(parts.find(p=>p.type==='minute').value,10);
+  return h*60+m;
+}
+
+function filterByKickoffTime(fixtures,timeStr){
+  if(!timeStr) return fixtures;
+  const [hh,mm]=timeStr.split(':').map(Number);
+  if(isNaN(hh)||isNaN(mm)) return fixtures;
+  const target=hh*60+mm;
+  return fixtures.filter(fx=>{
+    const mins=ptMinutesOfDay(fx.startTime);
+    return mins===target;
+  });
+}
+
 function f(v){return v==null?"-":Number(v).toFixed(2)}
 function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
 
@@ -93,6 +120,8 @@ function setMode(m){
   document.getElementById('fid').style.display=hideCommon?'none':'block';
   document.getElementById('fidHint').style.display=hideCommon?'none':'block';
   document.getElementById('bk').style.display=hideCommon?'none':'block';
+  document.getElementById('bk2').style.display=hideCommon?'none':'block';
+  document.getElementById('bk2Hint').style.display=hideCommon?'none':'block';
   document.getElementById('fidHint').textContent = (m==='close')
     ? "Obrigatorio no modo Fecho: cola aqui o fixtureId do jogo que queres fechar."
     : "No modo ao vivo, o fixtureId e opcional (filtra so este jogo).";
@@ -215,6 +244,7 @@ async function run(){
   if(!k && mode!=='bookmakers'){setSt("Falta API key",true);return}
   const fid=document.getElementById('fid').value.trim();
   const bk=document.getElementById('bk').value;
+  const bk2=document.getElementById('bk2').value.trim();
   const debug=document.getElementById('dbg').checked;
 
   document.getElementById('r').innerHTML="";
@@ -240,8 +270,8 @@ async function run(){
     const kickoffVal=document.getElementById('kickoff').value;
     if(!kickoffVal){setSt("Falta a hora do kickoff (obrigatoria no modo Fecho, para nao misturar precos in-play)",true);return}
     const windowMin=parseInt(document.getElementById('winMin').value,10)||60;
-    setSt("A puxar historico "+bk+"...");
-    await runClose(k,fid,bk,debug,kickoffVal,windowMin,"?","?");
+    setSt("A puxar historico "+bk+(bk2?" + "+bk2:"")+"...");
+    await runClose(k,fid,bk,bk2,debug,kickoffVal,windowMin,"?","?");
     return;
   }
 
@@ -252,21 +282,34 @@ async function run(){
   setSt("A procurar jogos...");
 
   try{
-    const matched=await getFixturesList(k,comp,d1,d2,fid);
+    let matched=await getFixturesList(k,comp,d1,d2,fid);
     if(matched.length===0){setSt("0 jogos encontrados para '"+comp+"' nessas datas",false);return}
-    setSt(matched.length+" jogo(s). A puxar odds "+bk+" (ao vivo)...");
 
-    let h="",t="Odds "+bk+" - "+(comp||fid)+"\n\n",n=0;
+    const liveTime=document.getElementById('liveTime').value;
+    if(liveTime){
+      const beforeCount=matched.length;
+      matched=filterByKickoffTime(matched,liveTime);
+      if(matched.length===0){setSt("0 jogos as "+liveTime+" PT — havia "+beforeCount+" antes do filtro de hora",false);return}
+    }
+
+    setSt(matched.length+" jogo(s). A puxar odds "+bk+(bk2?" + "+bk2:"")+" (ao vivo)...");
+
+    let h="",t="Odds "+bk+(bk2?" + "+bk2:"")+" - "+(comp||fid)+"\n\n",n=0;
 
     for(const fx of matched){
-      let h1=null,x=null,h2=null,extraInfo="",debugJson=null;
+      let h1=null,x=null,h2=null,h1b=null,xb=null,h2b=null,extraInfo="",debugJson=null;
       try{
-        const url2=`https://api.oddspapi.io/v4/odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bk}`;
+        const bkParam=bk2?`${bk},${bk2}`:bk;
+        const url2=`https://api.oddspapi.io/v4/odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bkParam}`;
         const res2=await fetch(url2);
         if(res2.ok){
           const od=await res2.json();
           const outs=extractOutcomes(od,bk);
           ({h1,x,h2}=outcomesToHXA(outs));
+          if(bk2){
+            const outs2=extractOutcomes(od,bk2);
+            ({h1:h1b,x:xb,h2:h2b}=outcomesToHXA(outs2));
+          }
           if(debug) debugJson=od;
         }else{
           extraInfo=" (erro odds: HTTP "+res2.status+")";
@@ -276,8 +319,8 @@ async function run(){
       const t1=fx.participant1Name||"?", t2=fx.participant2Name||"?";
       const when=fmtPT(fx.startTime);
       n++;
-      h+=renderCard(when,extraInfo,t1,t2,h1,x,h2,fx.fixtureId,debugJson);
-      t+=renderTxt(t1,t2,when,extraInfo,h1,x,h2,fx.fixtureId);
+      h+=renderCard(when,extraInfo,t1,t2,bk,h1,x,h2,fx.fixtureId,debugJson,bk2||null,h1b,xb,h2b);
+      t+=renderTxt(t1,t2,when,extraInfo,bk,h1,x,h2,fx.fixtureId,bk2||null,h1b,xb,h2b);
       await new Promise(r=>setTimeout(r,900));
     }
 
@@ -405,10 +448,11 @@ function runBookmakersLocal(q,tipoFiltro){
   document.getElementById('cp').style.display='block';
 }
 
-async function runClose(k,fid,bk,debug,kickoffVal,windowMin,teamHome,teamAway){
-  let h1=null,x=null,h2=null,extraInfo="",debugJson=null;
+async function runClose(k,fid,bk,bk2,debug,kickoffVal,windowMin,teamHome,teamAway){
+  let h1=null,x=null,h2=null,h1b=null,xb=null,h2b=null,extraInfo="",debugJson=null;
   try{
-    const url2=`https://api.oddspapi.io/v4/historical-odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fid)}&bookmakers=${bk}`;
+    const bkParam=bk2?`${bk},${bk2}`:bk;
+    const url2=`https://api.oddspapi.io/v4/historical-odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fid)}&bookmakers=${bkParam}`;
     const ctrl=new AbortController();
     const timer=setTimeout(()=>ctrl.abort(),20000);
     let res2;
@@ -422,6 +466,7 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin,teamHome,teamAway){
       let hist;
       try{ hist=JSON.parse(rawTxt); }catch(e3){ hist=null; }
       const extracted = hist ? extractHistoricalHXA(hist,bk,kickoffVal,windowMin) : null;
+      const extracted2 = (hist && bk2) ? extractHistoricalHXA(hist,bk2,kickoffVal,windowMin) : null;
       const fmtTs=tt=>tt?fmtPT(tt):"?";
       if(extracted && (extracted.h1!=null||extracted.x!=null||extracted.h2!=null)){
         h1=extracted.h1; x=extracted.x; h2=extracted.h2;
@@ -437,6 +482,10 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin,teamHome,teamAway){
         extraInfo=" (sem preco extraido · "+rawTxt.length+" chars · topo: "+shape+" · market101: "+m101Shape+")";
         if(debug) debugJson={_forma_topo:shape,_forma_market101:m101Shape};
       }
+      if(extracted2 && (extracted2.h1!=null||extracted2.x!=null||extracted2.h2!=null)){
+        h1b=extracted2.h1; xb=extracted2.x; h2b=extracted2.h2;
+        if(debug) debugJson=Object.assign({},debugJson||{},{_bk2:extracted2});
+      }
     }else{
       let bodyTxt="";
       try{ bodyTxt=await res2.text(); }catch(e2){}
@@ -449,20 +498,28 @@ async function runClose(k,fid,bk,debug,kickoffVal,windowMin,teamHome,teamAway){
   const finalHome=(auto&&auto.home)||teamHome;
   const finalAway=(auto&&auto.away)||teamAway;
 
-  const h=renderCard(when,extraInfo,finalHome,finalAway,h1,x,h2,fid,debugJson);
-  const t=renderTxt(finalHome,finalAway,when,extraInfo,h1,x,h2,fid);
+  const h=renderCard(when,extraInfo,finalHome,finalAway,bk,h1,x,h2,fid,debugJson,bk2||null,h1b,xb,h2b);
+  const t=renderTxt(finalHome,finalAway,when,extraInfo,bk,h1,x,h2,fid,bk2||null,h1b,xb,h2b);
   document.getElementById('r').innerHTML=h;
   setSt("1 jogo mostrado");
   txt=t.trim();
   document.getElementById('cp').style.display='block';
 }
 
-function renderCard(when,extraInfo,t1,t2,h1,x,h2,fixtureId,debugJson){
-  return `<div class=m><b>${esc(when)} ${esc(extraInfo)}</b>${esc(t1)} x ${esc(t2)}<div class=o><div>1: ${f(h1)}</div><div>X: ${f(x)}</div><div>2: ${f(h2)}</div></div><div class=fidrow>ID: <span class=fidval onclick="copyOne(this)">${esc(fixtureId)}</span></div>${debugJson?`<div class=dbg>${esc(JSON.stringify(debugJson,null,1).slice(0,4000))}</div>`:""}</div>`;
+function oddsRow(label,h1,x,h2){
+  return `<div class=bkrow><b class=bklabel>${esc(label)}</b><div class=o><div>1: ${f(h1)}</div><div>X: ${f(x)}</div><div>2: ${f(h2)}</div></div></div>`;
 }
 
-function renderTxt(t1,t2,when,extraInfo,h1,x,h2,fixtureId){
-  return `${t1} x ${t2} - ${when}${extraInfo} [ID: ${fixtureId}]\n1: ${f(h1)} | X: ${f(x)} | 2: ${f(h2)}\n\n`;
+function renderCard(when,extraInfo,t1,t2,bk1,h1,x,h2,fixtureId,debugJson,bk2,h1b,xb,h2b){
+  let rows=oddsRow(bk1,h1,x,h2);
+  if(bk2) rows+=oddsRow(bk2,h1b,xb,h2b);
+  return `<div class=m><b>${esc(when)} ${esc(extraInfo)}</b>${esc(t1)} x ${esc(t2)}${rows}<div class=fidrow>ID: <span class=fidval onclick="copyOne(this)">${esc(fixtureId)}</span></div>${debugJson?`<div class=dbg>${esc(JSON.stringify(debugJson,null,1).slice(0,4000))}</div>`:""}</div>`;
+}
+
+function renderTxt(t1,t2,when,extraInfo,bk1,h1,x,h2,fixtureId,bk2,h1b,xb,h2b){
+  let s=`${t1} x ${t2} - ${when}${extraInfo} [ID: ${fixtureId}]\n${bk1}: 1: ${f(h1)} | X: ${f(x)} | 2: ${f(h2)}\n`;
+  if(bk2) s+=`${bk2}: 1: ${f(h1b)} | X: ${f(xb)} | 2: ${f(h2b)}\n`;
+  return s+`\n`;
 }
 
 function setSt(msg,err){
