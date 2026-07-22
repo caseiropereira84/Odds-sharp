@@ -1,7 +1,7 @@
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Odds</title>
 <style>body{background:#0a0e14;color:#eee;font-family:-apple-system,sans-serif;padding:16px}input,select{width:100%;padding:12px;margin:6px 0;background:#1a2234;color:#fff;border:1px solid #333;border-radius:8px;font-size:16px;box-sizing:border-box}button{width:100%;padding:14px;background:#5b8dff;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;margin-top:8px}.m{padding:10px;border-bottom:1px solid #333}.m b{font-size:11px;color:#7d8aa8;display:block}.o{display:flex;gap:6px;margin-top:6px}.o div{flex:1;background:#1a2234;padding:6px;text-align:center;border-radius:6px}#st{text-align:center;color:#888;padding:8px;font-size:13px;min-height:18px}.tabs{display:flex;gap:6px;margin:10px 0}.tab{flex:1;padding:10px;text-align:center;background:#1a2234;border-radius:8px;border:1px solid #333;font-size:14px;cursor:pointer}.tab.active{background:#5b8dff;border-color:#5b8dff}.hint{font-size:12px;color:#7d8aa8;margin:2px 0 8px}.dbg{background:#111826;border:1px solid #333;border-radius:8px;padding:10px;margin-top:8px;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#8fa}.chk{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#aaa}.chk input{width:auto;margin:0}.fidrow{margin-top:6px;font-size:11px;color:#7d8aa8}.fidval{color:#5b8dff;font-weight:bold;text-decoration:underline;cursor:pointer}.bkrow{margin-top:6px}.bklabel{font-size:11px;color:#5b8dff;font-weight:bold;display:block}</style></head>
 <body><h2>Odds Sharp</h2>
-  
+
 <div class="tabs">
   <div class="tab active" id="tabLive" onclick="setMode('live')">Odds ao vivo (análise)</div>
   <div class="tab" id="tabClose" onclick="setMode('close')">Odds de fecho (histórico)</div>
@@ -297,30 +297,45 @@ async function run(){
     let h="",t="Odds "+bk+(bk2?" + "+bk2:"")+" - "+(comp||fid)+"\n\n",n=0;
 
     for(const fx of matched){
-      let h1=null,x=null,h2=null,h1b=null,xb=null,h2b=null,extraInfo="",debugJson=null;
+      let h1=null,x=null,h2=null,h1b=null,xb=null,h2b=null,extraInfo="",extraInfo2="",debugJson=null;
       try{
-        const bkParam=bk2?`${bk},${bk2}`:bk;
-        const url2=`https://api.oddspapi.io/v4/odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bkParam}`;
+        const url2=`https://api.oddspapi.io/v4/odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bk}`;
         const res2=await fetch(url2);
         if(res2.ok){
           const od=await res2.json();
           const outs=extractOutcomes(od,bk);
           ({h1,x,h2}=outcomesToHXA(outs));
-          if(bk2){
-            const outs2=extractOutcomes(od,bk2);
-            ({h1:h1b,x:xb,h2:h2b}=outcomesToHXA(outs2));
-          }
           if(debug) debugJson=od;
         }else{
-          extraInfo=" (erro odds: HTTP "+res2.status+")";
+          let bodyTxt="";
+          try{ bodyTxt=await res2.text(); }catch(e2){}
+          extraInfo=" (erro odds "+bk+": HTTP "+res2.status+" "+bodyTxt.slice(0,150)+")";
         }
-      }catch(e){ extraInfo=" (erro odds: "+e.message+")"; }
+      }catch(e){ extraInfo=" (erro odds "+bk+": "+e.message+")"; }
+
+      if(bk2){
+        await new Promise(r=>setTimeout(r,900));
+        try{
+          const url2b=`https://api.oddspapi.io/v4/odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fx.fixtureId)}&bookmakers=${bk2}`;
+          const res2b=await fetch(url2b);
+          if(res2b.ok){
+            const odb=await res2b.json();
+            const outs2=extractOutcomes(odb,bk2);
+            ({h1:h1b,x:xb,h2:h2b}=outcomesToHXA(outs2));
+            if(debug) debugJson=Object.assign({},debugJson||{},{_bk2:odb});
+          }else{
+            let bodyTxt2="";
+            try{ bodyTxt2=await res2b.text(); }catch(e2){}
+            extraInfo2=" (erro odds "+bk2+": HTTP "+res2b.status+" "+bodyTxt2.slice(0,150)+")";
+          }
+        }catch(e){ extraInfo2=" (erro odds "+bk2+": "+e.message+")"; }
+      }
 
       const t1=fx.participant1Name||"?", t2=fx.participant2Name||"?";
       const when=fmtPT(fx.startTime);
       n++;
-      h+=renderCard(when,extraInfo,t1,t2,bk,h1,x,h2,fx.fixtureId,debugJson,bk2||null,h1b,xb,h2b);
-      t+=renderTxt(t1,t2,when,extraInfo,bk,h1,x,h2,fx.fixtureId,bk2||null,h1b,xb,h2b);
+      h+=renderCard(when,extraInfo+extraInfo2,t1,t2,bk,h1,x,h2,fx.fixtureId,debugJson,bk2||null,h1b,xb,h2b);
+      t+=renderTxt(t1,t2,when,extraInfo+extraInfo2,bk,h1,x,h2,fx.fixtureId,bk2||null,h1b,xb,h2b);
       await new Promise(r=>setTimeout(r,900));
     }
 
@@ -448,11 +463,10 @@ function runBookmakersLocal(q,tipoFiltro){
   document.getElementById('cp').style.display='block';
 }
 
-async function runClose(k,fid,bk,bk2,debug,kickoffVal,windowMin,teamHome,teamAway){
-  let h1=null,x=null,h2=null,h1b=null,xb=null,h2b=null,extraInfo="",debugJson=null;
+async function fetchHistoricalForBk(k,fid,bk,kickoffVal,windowMin,debug){
+  let h1=null,x=null,h2=null,extraInfo="",dbgOut=null;
   try{
-    const bkParam=bk2?`${bk},${bk2}`:bk;
-    const url2=`https://api.oddspapi.io/v4/historical-odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fid)}&bookmakers=${bkParam}`;
+    const url2=`https://api.oddspapi.io/v4/historical-odds?apiKey=${encodeURIComponent(k)}&fixtureId=${encodeURIComponent(fid)}&bookmakers=${bk}`;
     const ctrl=new AbortController();
     const timer=setTimeout(()=>ctrl.abort(),20000);
     let res2;
@@ -466,12 +480,11 @@ async function runClose(k,fid,bk,bk2,debug,kickoffVal,windowMin,teamHome,teamAwa
       let hist;
       try{ hist=JSON.parse(rawTxt); }catch(e3){ hist=null; }
       const extracted = hist ? extractHistoricalHXA(hist,bk,kickoffVal,windowMin) : null;
-      const extracted2 = (hist && bk2) ? extractHistoricalHXA(hist,bk2,kickoffVal,windowMin) : null;
       const fmtTs=tt=>tt?fmtPT(tt):"?";
       if(extracted && (extracted.h1!=null||extracted.x!=null||extracted.h2!=null)){
         h1=extracted.h1; x=extracted.x; h2=extracted.h2;
-        extraInfo=" (1:"+fmtTs(extracted.ts1)+" X:"+fmtTs(extracted.tsx)+" 2:"+fmtTs(extracted.ts2)+" · pontos "+extracted.tot1+"/"+extracted.totx+"/"+extracted.tot2+(kickoffVal?", janela "+windowMin+"min":", ultimo disponivel")+")";
-        if(debug) debugJson=extracted;
+        extraInfo=" ("+bk+" 1:"+fmtTs(extracted.ts1)+" X:"+fmtTs(extracted.tsx)+" 2:"+fmtTs(extracted.ts2)+" · pontos "+extracted.tot1+"/"+extracted.totx+"/"+extracted.tot2+(kickoffVal?", janela "+windowMin+"min":", ultimo disponivel")+")";
+        if(debug) dbgOut=extracted;
       }else{
         const shape=hist!=null?describeShape(hist):"JSON invalido/nao parseavel";
         let m101Shape="n/a";
@@ -479,19 +492,29 @@ async function runClose(k,fid,bk,bk2,debug,kickoffVal,windowMin,teamHome,teamAwa
           const m101 = hist && hist.bookmakers && hist.bookmakers[bk] && hist.bookmakers[bk].markets && hist.bookmakers[bk].markets["101"];
           m101Shape = m101!=null ? describeShape(m101,0,5) : "market 101 nao encontrado nesta resposta";
         }catch(e4){ m101Shape="erro ao inspeccionar: "+e4.message; }
-        extraInfo=" (sem preco extraido · "+rawTxt.length+" chars · topo: "+shape+" · market101: "+m101Shape+")";
-        if(debug) debugJson={_forma_topo:shape,_forma_market101:m101Shape};
-      }
-      if(extracted2 && (extracted2.h1!=null||extracted2.x!=null||extracted2.h2!=null)){
-        h1b=extracted2.h1; xb=extracted2.x; h2b=extracted2.h2;
-        if(debug) debugJson=Object.assign({},debugJson||{},{_bk2:extracted2});
+        extraInfo=" (sem preco "+bk+" · "+rawTxt.length+" chars · topo: "+shape+" · market101: "+m101Shape+")";
+        if(debug) dbgOut={_forma_topo:shape,_forma_market101:m101Shape};
       }
     }else{
       let bodyTxt="";
       try{ bodyTxt=await res2.text(); }catch(e2){}
-      extraInfo=" (erro historico: HTTP "+res2.status+" "+bodyTxt.slice(0,150)+")";
+      extraInfo=" (erro historico "+bk+": HTTP "+res2.status+" "+bodyTxt.slice(0,150)+")";
     }
-  }catch(e){ extraInfo=" (erro historico: "+(e.name==='AbortError'?"timeout 20s":e.message)+")"; }
+  }catch(e){ extraInfo=" (erro historico "+bk+": "+(e.name==='AbortError'?"timeout 20s":e.message)+")"; }
+  return {h1,x,h2,extraInfo,dbgOut};
+}
+
+async function runClose(k,fid,bk,bk2,debug,kickoffVal,windowMin,teamHome,teamAway){
+  const r1=await fetchHistoricalForBk(k,fid,bk,kickoffVal,windowMin,debug);
+  let h1=r1.h1,x=r1.x,h2=r1.h2,extraInfo=r1.extraInfo,debugJson=r1.dbgOut;
+  let h1b=null,xb=null,h2b=null;
+
+  if(bk2){
+    const r2=await fetchHistoricalForBk(k,fid,bk2,kickoffVal,windowMin,debug);
+    h1b=r2.h1; xb=r2.x; h2b=r2.h2;
+    extraInfo+=r2.extraInfo;
+    if(debug) debugJson=Object.assign({},debugJson||{},{_bk2:r2.dbgOut});
+  }
 
   const when=kickoffVal?fmtPT(kickoffVal):"";
   const auto=await fetchTeamNames(k,fid,kickoffVal);
