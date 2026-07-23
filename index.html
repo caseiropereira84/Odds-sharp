@@ -1,5 +1,5 @@
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Odds</title>
-<style>body{background:#0a0e14;color:#eee;font-family:-apple-system,sans-serif;padding:16px}input,select{width:100%;padding:12px;margin:6px 0;background:#1a2234;color:#fff;border:1px solid #333;border-radius:8px;font-size:16px;box-sizing:border-box}button{width:100%;padding:14px;background:#5b8dff;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;margin-top:8px}.m{padding:10px;border-bottom:1px solid #333}.m b{font-size:11px;color:#7d8aa8;display:block}.o{display:flex;gap:6px;margin-top:6px}.o div{flex:1;background:#1a2234;padding:6px;text-align:center;border-radius:6px}#st{text-align:center;color:#888;padding:8px;font-size:13px;min-height:18px}.tabs{display:flex;gap:6px;margin:10px 0}.tab{flex:1;padding:10px;text-align:center;background:#1a2234;border-radius:8px;border:1px solid #333;font-size:14px;cursor:pointer}.tab.active{background:#5b8dff;border-color:#5b8dff}.hint{font-size:12px;color:#7d8aa8;margin:2px 0 8px}.dbg{background:#111826;border:1px solid #333;border-radius:8px;padding:10px;margin-top:8px;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#8fa}.chk{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#aaa}.chk input{width:auto;margin:0}.fidrow{margin-top:6px;font-size:11px;color:#7d8aa8}.fidval{color:#5b8dff;font-weight:bold;text-decoration:underline;cursor:pointer}.bkrow{margin-top:6px}.bklabel{font-size:11px;color:#5b8dff;font-weight:bold;display:block}</style></head>
+<style>body{background:#0a0e14;color:#eee;font-family:-apple-system,sans-serif;padding:16px}input,select{width:100%;padding:12px;margin:6px 0;background:#1a2234;color:#fff;border:1px solid #333;border-radius:8px;font-size:16px;box-sizing:border-box}button{width:100%;padding:14px;background:#5b8dff;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;margin-top:8px}.m{padding:10px;border-bottom:1px solid #333}.m b{font-size:11px;color:#7d8aa8;display:block}.o{display:flex;gap:6px;margin-top:6px}.o div{flex:1;background:#1a2234;padding:6px;text-align:center;border-radius:6px}#st{text-align:center;color:#888;padding:8px;font-size:13px;min-height:18px}.tabs{display:flex;gap:6px;margin:10px 0}.tab{flex:1;padding:10px;text-align:center;background:#1a2234;border-radius:8px;border:1px solid #333;font-size:14px;cursor:pointer}.tab.active{background:#5b8dff;border-color:#5b8dff}.hint{font-size:12px;color:#7d8aa8;margin:2px 0 8px}.dbg{background:#111826;border:1px solid #333;border-radius:8px;padding:10px;margin-top:8px;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#8fa}.chk{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#aaa}.chk input{width:auto;margin:0}.fidrow{margin-top:6px;font-size:11px;color:#7d8aa8}.fidval{color:#5b8dff;font-weight:bold;text-decoration:underline;cursor:pointer}.bkrow{margin-top:6px}.bklabel{font-size:11px;color:#5b8dff;font-weight:bold;display:block}.ev-real{background:#123a1f!important;border:1px solid #2ecc71!important;color:#7ee8a8!important;font-weight:bold}.ev-marginal{background:#3a2f0d!important;border:1px solid #e6b800!important;color:#f5d76e!important;font-weight:bold}.ev-shadow{background:#0d2a3a!important;border:1px solid #4aa8e0!important;color:#8fd0f5!important;font-weight:bold}.evline{margin-top:8px;padding:8px;background:#0d1f14;border:1px solid #2ecc71;border-radius:8px;font-size:12px;color:#cdeedb;line-height:1.6}.noevline{margin-top:8px;font-size:12px;color:#7d8aa8}</style></head>
 <body><h2>Odds Sharp</h2>
 
 <div class="tabs">
@@ -203,6 +203,62 @@ function outcomesToHXA(outs){
   }catch(e){ return {h1:null,x:null,h2:null} }
 }
 
+// De-vig power: encontra o expoente k tal que sum((1/odd_i)^k) = 1.
+// Metodo padrao do projecto (ver PARTE A do prompt de value betting).
+function powerDevigProbs(odds){
+  if(!Array.isArray(odds)||odds.length<2) return null;
+  const implied=odds.map(o=>(o&&o>0)?1/o:null);
+  if(implied.some(v=>v==null||v<=0||v>=1)) return null;
+  const sumPow=k=>implied.reduce((s,v)=>s+Math.pow(v,k),0);
+  if(sumPow(1)<=1) return null; // sem margem/dados inconsistentes
+  let lo=1,hi=30;
+  for(let i=0;i<60;i++){
+    const mid=(lo+hi)/2;
+    if(sumPow(mid)>1) lo=mid; else hi=mid;
+  }
+  const k=(lo+hi)/2;
+  return implied.map(v=>Math.pow(v,k));
+}
+
+// Classifica um EV segundo o protocolo (Parte A do prompt de value betting):
+// >=+5% dentro da banda 1.70-3.00 = APOSTA (dinheiro real); fora da banda desce sempre a sombra.
+// +2% a +5% = MARGINAL (sombra). +1% a +2% = SOMBRA FINA (sombra, para acelerar CLV). <+1% descarta.
+function classifyEV(ev,odd){
+  if(ev<0.01) return null;
+  const inBand=(odd!=null && odd>=1.70 && odd<=3.00);
+  if(ev>=0.05){
+    return inBand
+      ? {emoji:"✅",label:"APOSTA",cls:"ev-real",real:true}
+      : {emoji:"⚠️",label:"MARGINAL (fora da banda 1.70-3.00)",cls:"ev-marginal",real:false};
+  }
+  if(ev>=0.02) return {emoji:"⚠️",label:"MARGINAL",cls:"ev-marginal",real:false};
+  return {emoji:"🔎",label:"SOMBRA FINA",cls:"ev-shadow",real:false};
+}
+
+// Compara a probabilidade justa (de-vig power do bookmaker 1) com as odds do bookmaker 2
+// e devolve TODAS as seleccoes com +EV que qualificam pelo protocolo (>=+1%), classificadas
+// e ordenadas da maior para a menor EV. Devolve [] se nenhuma qualificar.
+function computeAllEV(bk1odds,bk2odds){
+  const probs=powerDevigProbs(bk1odds);
+  if(!probs) return [];
+  const out=[];
+  for(let i=0;i<3;i++){
+    const o2=bk2odds[i];
+    if(o2==null||o2<=0) continue;
+    const ev=probs[i]*o2-1;
+    const c=classifyEV(ev,o2);
+    if(c) out.push({idx:i,prob:probs[i],odd:o2,ev,...c});
+  }
+  out.sort((a,b)=>b.ev-a.ev);
+  return out;
+}
+
+function selLabel(idx,t1,t2){
+  if(idx===0) return "1 ("+t1+")";
+  if(idx===1) return "X (Empate)";
+  return "2 ("+t2+")";
+}
+
 function getTimestamp(item){
   return item.createdAt||item.timestamp||item.updatedAt||item.time||null;
 }
@@ -294,7 +350,7 @@ async function run(){
 
     setSt(matched.length+" jogo(s). A puxar odds "+bk+(bk2?" + "+bk2:"")+" (ao vivo)...");
 
-    let h="",t="Odds "+bk+(bk2?" + "+bk2:"")+" - "+(comp||fid)+"\n\n",n=0;
+    let h="",t=(bk2?("+EV "+bk+" vs "+bk2):("Odds "+bk))+" - "+(comp||fid)+"\n\n",n=0;
 
     for(const fx of matched){
       let h1=null,x=null,h2=null,h1b=null,xb=null,h2b=null,extraInfo="",extraInfo2="",debugJson=null;
@@ -334,8 +390,9 @@ async function run(){
       const t1=fx.participant1Name||"?", t2=fx.participant2Name||"?";
       const when=fmtPT(fx.startTime);
       n++;
-      h+=renderCard(when,extraInfo+extraInfo2,t1,t2,bk,h1,x,h2,fx.fixtureId,debugJson,bk2||null,h1b,xb,h2b);
-      t+=renderTxt(t1,t2,when,extraInfo+extraInfo2,bk,h1,x,h2,fx.fixtureId,bk2||null,h1b,xb,h2b);
+      const evList=bk2?computeAllEV([h1,x,h2],[h1b,xb,h2b]):null;
+      h+=renderCard(when,extraInfo+extraInfo2,t1,t2,bk,h1,x,h2,fx.fixtureId,debugJson,bk2||null,h1b,xb,h2b,evList);
+      t+=renderTxt(t1,t2,when,extraInfo+extraInfo2,bk,h1,x,h2,fx.fixtureId,bk2||null,h1b,xb,h2b,evList);
       await new Promise(r=>setTimeout(r,900));
     }
 
@@ -520,29 +577,55 @@ async function runClose(k,fid,bk,bk2,debug,kickoffVal,windowMin,teamHome,teamAwa
   const auto=await fetchTeamNames(k,fid,kickoffVal);
   const finalHome=(auto&&auto.home)||teamHome;
   const finalAway=(auto&&auto.away)||teamAway;
+  const evList=bk2?computeAllEV([h1,x,h2],[h1b,xb,h2b]):null;
 
-  const h=renderCard(when,extraInfo,finalHome,finalAway,bk,h1,x,h2,fid,debugJson,bk2||null,h1b,xb,h2b);
-  const t=renderTxt(finalHome,finalAway,when,extraInfo,bk,h1,x,h2,fid,bk2||null,h1b,xb,h2b);
+  const h=renderCard(when,extraInfo,finalHome,finalAway,bk,h1,x,h2,fid,debugJson,bk2||null,h1b,xb,h2b,evList);
+  const t=renderTxt(finalHome,finalAway,when,extraInfo,bk,h1,x,h2,fid,bk2||null,h1b,xb,h2b,evList);
   document.getElementById('r').innerHTML=h;
   setSt("1 jogo mostrado");
   txt=t.trim();
   document.getElementById('cp').style.display='block';
 }
 
-function oddsRow(label,h1,x,h2){
-  return `<div class=bkrow><b class=bklabel>${esc(label)}</b><div class=o><div>1: ${f(h1)}</div><div>X: ${f(x)}</div><div>2: ${f(h2)}</div></div></div>`;
+function oddsRow(label,h1,x,h2,evByIdx){
+  const vals=[h1,x,h2],labs=["1","X","2"];
+  const cells=vals.map((v,i)=>{
+    const c=evByIdx&&evByIdx[i];
+    return `<div class="${c?c.cls:''}">${labs[i]}: ${f(v)}</div>`;
+  }).join('');
+  return `<div class=bkrow><b class=bklabel>${esc(label)}</b><div class=o>${cells}</div></div>`;
 }
 
-function renderCard(when,extraInfo,t1,t2,bk1,h1,x,h2,fixtureId,debugJson,bk2,h1b,xb,h2b){
+function renderCard(when,extraInfo,t1,t2,bk1,h1,x,h2,fixtureId,debugJson,bk2,h1b,xb,h2b,evList){
   let rows=oddsRow(bk1,h1,x,h2);
-  if(bk2) rows+=oddsRow(bk2,h1b,xb,h2b);
-  return `<div class=m><b>${esc(when)} ${esc(extraInfo)}</b>${esc(t1)} x ${esc(t2)}${rows}<div class=fidrow>ID: <span class=fidval onclick="copyOne(this)">${esc(fixtureId)}</span></div>${debugJson?`<div class=dbg>${esc(JSON.stringify(debugJson,null,1).slice(0,4000))}</div>`:""}</div>`;
+  let evBlock="";
+  if(bk2){
+    const evByIdx={};
+    (evList||[]).forEach(e=>{evByIdx[e.idx]=e;});
+    rows+=oddsRow(bk2,h1b,xb,h2b,evByIdx);
+    if(evList && evList.length){
+      evBlock="<div class=evline>"+evList.map(e=>
+        `${e.emoji} <b>${e.label}</b>: ${esc(selLabel(e.idx,t1,t2))} @ ${f(e.odd)} (${esc(bk2)}) · justa ${(e.prob*100).toFixed(1)}% → <b>+${(e.ev*100).toFixed(1)}%</b>`
+      ).join("<br>")+"</div>";
+    }else{
+      evBlock=`<div class=noevline>sem +EV dentro dos limiares do protocolo (&lt;+1%)</div>`;
+    }
+  }
+  return `<div class=m><b>${esc(when)} ${esc(extraInfo)}</b>${esc(t1)} x ${esc(t2)}${rows}${evBlock}<div class=fidrow>ID: <span class=fidval onclick="copyOne(this)">${esc(fixtureId)}</span></div>${debugJson?`<div class=dbg>${esc(JSON.stringify(debugJson,null,1).slice(0,4000))}</div>`:""}</div>`;
 }
 
-function renderTxt(t1,t2,when,extraInfo,bk1,h1,x,h2,fixtureId,bk2,h1b,xb,h2b){
-  let s=`${t1} x ${t2} - ${when}${extraInfo} [ID: ${fixtureId}]\n${bk1}: 1: ${f(h1)} | X: ${f(x)} | 2: ${f(h2)}\n`;
-  if(bk2) s+=`${bk2}: 1: ${f(h1b)} | X: ${f(xb)} | 2: ${f(h2b)}\n`;
-  return s+`\n`;
+function renderTxt(t1,t2,when,extraInfo,bk1,h1,x,h2,fixtureId,bk2,h1b,xb,h2b,evList){
+  if(bk2){
+    // Com bookmaker 2: o texto copiado foca-se nas seleccoes com +EV que qualificam pelo protocolo.
+    if(evList && evList.length){
+      const lines=evList.map(e=>
+        `${e.emoji} ${e.label}: ${selLabel(e.idx,t1,t2)} @ ${f(e.odd)} (${bk2}) · justa ${(e.prob*100).toFixed(1)}% → +${(e.ev*100).toFixed(1)}%`
+      ).join("\n");
+      return `${t1} x ${t2} [ID: ${fixtureId}]\n${lines}\n\n`;
+    }
+    return `${t1} x ${t2} [ID: ${fixtureId}] - sem +EV dentro dos limiares do protocolo\n\n`;
+  }
+  return `${t1} x ${t2} - ${when}${extraInfo} [ID: ${fixtureId}]\n${bk1}: 1: ${f(h1)} | X: ${f(x)} | 2: ${f(h2)}\n\n`;
 }
 
 function setSt(msg,err){
